@@ -1,0 +1,1992 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Akademik Terpadu</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; font-size: 12px; background-color: #f8fafc; margin: 0; padding: 0; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .transition-all { transition: all 0.2s ease-in-out; }
+        [x-cloak] { display: none !important; }
+        .logo-maintain { object-fit: contain; object-position: center; }
+    </style>
+
+    <script>
+        // =================================================================
+        // KONFIGURASI FIREBASE REALTIME DATABASE (OPSI 1: VERCEL + FIREBASE)
+        // =================================================================
+        const FB_URL = "https://aplikasi-1-8a145-default-rtdb.asia-southeast1.firebasedatabase.app";
+        const FB_SECRET = "8Wxr1GKnN4LCvJnf87BgJtRmMI7cl0612iHWNXlF";
+
+        const fbApi = {
+            url(path = '') {
+                const clean = path ? path.replace(/^\/+/, '') : '';
+                return `${FB_URL}/${clean}.json?auth=${FB_SECRET}`;
+            },
+            async get(path = '') {
+                const res = await fetch(this.url(path));
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Gagal membaca data dari Firebase.`);
+                return await res.json();
+            },
+            async put(path, data) {
+                const res = await fetch(this.url(path), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Gagal menyimpan data ke Firebase.`);
+                return await res.json();
+            },
+            async patch(path, data) {
+                const res = await fetch(this.url(path), {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Gagal memperbarui data di Firebase.`);
+                return await res.json();
+            },
+            async delete(path) {
+                const res = await fetch(this.url(path), { method: 'DELETE' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}: Gagal menghapus data di Firebase.`);
+                return true;
+            }
+        };
+
+        function lmsApp() {
+            return {
+                init() {
+                    this.fetchSettingsOnly();
+                },
+
+                isAppReady: false,
+                activeTab: 'dashboard',
+                mobileMenuOpen: false,
+                isLoading: false,
+                loginLoading: false,
+                showLogoutModal: false,
+                showUploadModal: false,
+                uploadForm: { kelas: '', fileName: '', fileData: null, isUploading: false },
+                showUploadUserModal: false,
+                uploadUserForm: { fileName: '', fileData: null, isUploading: false },
+                generalUploadForm: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                berkasUpload: {
+                    modulAjar: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                    prosem: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                    prota: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false }
+                },
+
+                showInfoModal: false, infoModalTitle: '', infoModalList: [],
+                isLoggedIn: false, userRole: '', userName: '', userInfo: '',
+                loginForm: { username: '', password: '' }, loginError: '',
+                userId: '', activeChatUser: null, chatMessage: '', chatSearch: '',
+                chatUpload: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                chatEventSource: null,
+
+                data: {
+                    stats: { siswaAktif: 0, guruAktif: 0, totalMateri: 0, tugasPending: 0, tugasMenunggu: 0 },
+                    materi: [], tugas: [], jadwal: [], informasi: [],
+                    adminUsers: [], adminKelas: [], adminSubmissions: [], pesan: [], berkasGuru: [],
+                    adminMateri: [], adminInformasi: [], adminTugas: [],
+                    settings: {
+                        namaInstitusi: "Sistem Akademik Terpadu",
+                        tahunAjaran: "2025/2026",
+                        semester: "Genap",
+                        linkWebKimia: "https://www.kimiadb2.com",
+                        logoUrl: "",
+                        showLogo: false,
+                        cloudinaryCloudName: "",
+                        cloudinaryUploadPreset: ""
+                    }
+                },
+
+                showUserModal: false, userFilterRole: 'Semua', userForm: { id: '', username: '', password: '', nama: '', role: 'Siswa', info: '', status: 'Aktif', isEdit: false },
+                showKelasModal: false, kelasForm: { id: '', namaKelas: '', waliKelas: '', jumlahSiswa: 0, isEdit: false },
+                showMateriModal: false, materiForm: { id: '', mapel: '', judul: '', deskripsi: '', guru: '', cover: '', fileName: '', kelasTarget: ['Semua'], isEdit: false },
+                showJadwalModal: false, jadwalForm: { id: '', hari: 'Senin', jam: '', mapel: '', ruang: '', guru: '', kelasTarget: ['Semua'], isEdit: false },
+                showTugasModal: false, tugasForm: { id: '', mapel: '', judul: '', tipe: 'Tugas Online', deadline: '', link: '', status: 'Menunggu', nilai: '', siswa: '', kelasTarget: ['Semua'], guru: '', kkm: 75, isEdit: false },
+                showInformasiModal: false, informasiForm: { id: '', judul: '', isi: '', tanggal: '', penulis: '', kelasTarget: ['Semua'], orderIndex: 0, isEdit: false },
+                showBerkasModal: false, berkasForm: { id: '', guru: '', mapel: '', kelasTarget: '', modulAjar: '', prosem: '', prota: '', waktuUpdate: '', isEdit: false, isManual: false }, adminFilterMapelBerkas: 'Semua',
+
+                showChangePasswordModal: false, changePasswordForm: { passwordBaru: '', konfirmasiPassword: '' },
+                showDetailMateriModal: false, selectedMateri: null,
+                showNilaiModal: false, activeTaskForGrading: null, studentGrades: {},
+                showUploadTugasModal: false, uploadTugasForm: { tugasId: '', fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                showDeleteConfirmModal: false, itemToDelete: { sheet: '', id: '', title: '' },
+
+                menuItems: [
+                    { id: 'dashboard', label: 'Dashboard', icon: 'ph-fill ph-squares-four', roles: ['siswa', 'guru', 'admin'] },
+                    { id: 'jadwal', label: 'Jadwal Pelajaran', icon: 'ph-fill ph-calendar-check', roles: ['siswa', 'guru', 'admin'] },
+                    { id: 'guru_berkas', label: 'Perangkat Ajar', icon: 'ph-fill ph-folder-notch', roles: ['guru'] },
+                    { id: 'materi', label: 'Materi Pembelajaran', icon: 'ph-fill ph-books', roles: ['siswa'] },
+                    { id: 'tugas', label: 'Tugas & Nilai', icon: 'ph-fill ph-exam', roles: ['siswa'] },
+                    { id: 'chat', label: 'Pesan Realtime', icon: 'ph-fill ph-chat-circle-dots', roles: ['siswa', 'guru', 'admin'] },
+                    { id: 'admin_informasi', label: 'Kelola Informasi', icon: 'ph-fill ph-megaphone', roles: ['guru', 'admin'] },
+                    { id: 'admin_kelas', label: 'Kelola Kelas', icon: 'ph-fill ph-chalkboard', roles: ['admin'] },
+                    { id: 'admin_users', label: 'Data Pengguna', icon: 'ph-fill ph-users-three', roles: ['admin'] },
+                    { id: 'admin_materi', label: 'Kelola Materi', icon: 'ph-fill ph-folder-open', roles: ['guru', 'admin'] },
+                    { id: 'admin_nilai', label: 'Kelola Tugas & Nilai', icon: 'ph-fill ph-file-text', roles: ['guru', 'admin'] },
+                    { id: 'admin_berkas', label: 'Pantau Perangkat Guru', icon: 'ph-fill ph-folders', roles: ['admin'] },
+                    { id: 'admin_settings', label: 'Pengaturan Sistem', icon: 'ph-fill ph-gear', roles: ['admin'] }
+                ],
+
+                getUniqueMapelForFilter() { return ["Pendidikan Agama Katolik & Budi Pekerti", "Pendidikan Pancasila", "Bahasa Indonesia", "Bahasa Inggris", "Bahasa Inggris Tingkat Lanjut", "Matematika Umum", "Matematika Tingkat Lanjut", "Biologi", "Fisika", "Kimia", "Geografi", "Sejarah", "Sosiologi", "Ekonomi", "PJOK", "Seni Rupa", "Informatika", "Muatan Lokal (Seni Musik)"].sort(); },
+                getWaliKelasList() { return ["Adriana Sumarni, S.Pd.", "Agustina Suyatmi, S.E.", "Asep Sutisna, M.Pd.", "Dra. B. Ratih Pradanti", "Nolly Dwi Susanto B, S.Si.", "Petrus Cahyono, S.Pd.", "Philipus Vembrey H, S.Pd.", "Mauritz Sinaga, S.Kom.", "Angela Afni Fibrianti, S.Pd.", "Billy Tantono, M.Pd.", "Riris Nainggolan, S.Pd.", "Pernama Cahya P, S.Pd.", "Teresa Maria Arrina, S.Si.", "Yosephine Novita S, S.Pd.", "Albertus Ade Pratama, S.Fil.", "Theresia Alvincia Erfrosina, S.Pd.", "Margaretha Ernawati, S.Pd", "Lansiana Septiani, S.Pd", "Bernadet Intan Dewi Safitri, S.Pd", "Martabe Simbolon, S.Pd"].sort(); },
+                getDaftarKelas() { return ['X.1','X.2','X.3','X.4','XI.1','XI.2','XI.3','XI.4','XII.1','XII.2','XII.3','XII.4']; },
+
+                async fetchSettingsOnly() {
+                    try {
+                        const res = await fbApi.get('Pengaturan');
+                        if (res) {
+                            this.data.settings = { ...this.data.settings, ...res };
+                            if (typeof this.data.settings.showLogo === 'string') {
+                                this.data.settings.showLogo = this.data.settings.showLogo.trim().toLowerCase() === 'true';
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Gagal memuat pengaturan awal:', e);
+                    } finally {
+                        this.isAppReady = true;
+                    }
+                },
+
+                async login() {
+                    this.loginLoading = true;
+                    this.loginError = '';
+                    try {
+                        let usersObj = await fbApi.get('Pengguna');
+                        if (!usersObj) {
+                            const defaultAdmin = { id: 'U-001', username: 'admin', password: 'admin123', nama: 'Admin Utama', role: 'Admin', info: 'Sistem', status: 'Aktif' };
+                            await fbApi.put('Pengguna/U-001', defaultAdmin);
+                            usersObj = { 'U-001': defaultAdmin };
+                        }
+                        const users = Object.values(usersObj || {});
+                        const uname = String(this.loginForm.username).trim().toLowerCase();
+                        const pwd = String(this.loginForm.password);
+                        const user = users.find(u => String(u.username).trim().toLowerCase() === uname && String(u.password) === pwd);
+
+                        if (user && String(user.status).trim().toLowerCase() === 'aktif') {
+                            this.userId = user.id;
+                            this.isLoggedIn = true;
+                            this.userRole = String(user.role).toLowerCase();
+                            this.userName = user.nama;
+                            this.userInfo = user.info || '';
+                            await this.loadData();
+                            this.initFirebaseRealtime();
+                        } else {
+                            this.loginError = 'Username atau Password salah / Akun tidak aktif.';
+                        }
+                    } catch (err) {
+                        this.loginError = 'Koneksi ke Firebase gagal: ' + err.message;
+                    } finally {
+                        this.loginLoading = false;
+                    }
+                },
+
+                initFirebaseRealtime() {
+                    const url = fbApi.url('Pesan');
+                    if (this.chatEventSource) this.chatEventSource.close();
+                    this.chatEventSource = new EventSource(url);
+                    this.chatEventSource.addEventListener('put', (e) => {
+                        const payload = JSON.parse(e.data);
+                        if (payload.path === "/") {
+                            this.data.pesan = payload.data ? Object.values(payload.data).filter(Boolean) : [];
+                        } else {
+                            const parts = payload.path.replace(/^\/+/, '').split('/');
+                            const key = parts[0];
+                            if (parts.length === 1) {
+                                if (payload.data) {
+                                    const idx = this.data.pesan.findIndex(p => p.id === key);
+                                    if (idx > -1) this.data.pesan[idx] = payload.data;
+                                    else this.data.pesan.push(payload.data);
+                                } else {
+                                    this.data.pesan = this.data.pesan.filter(p => p.id !== key);
+                                }
+                            } else if (parts.length === 2) {
+                                const idx = this.data.pesan.findIndex(p => p.id === key);
+                                if (idx > -1) this.data.pesan[idx][parts[1]] = payload.data;
+                            }
+                        }
+                        if (this.activeTab === 'chat' && this.activeChatUser) this.scrollToBottom();
+                    });
+                    this.chatEventSource.addEventListener('patch', (e) => {
+                        const payload = JSON.parse(e.data);
+                        if (!payload || !payload.data) return;
+                        if (payload.path === "/") {
+                            Object.entries(payload.data).forEach(([k, v]) => {
+                                const parts = k.split('/');
+                                const key = parts[0];
+                                if (parts.length === 1) {
+                                    if (v === null) {
+                                        this.data.pesan = this.data.pesan.filter(p => p.id !== key);
+                                    } else {
+                                        const idx = this.data.pesan.findIndex(p => p.id === key);
+                                        if (idx > -1) this.data.pesan[idx] = { ...this.data.pesan[idx], ...v };
+                                        else this.data.pesan.push(v);
+                                    }
+                                } else if (parts.length === 2) {
+                                    const idx = this.data.pesan.findIndex(p => p.id === key);
+                                    if (idx > -1) this.data.pesan[idx][parts[1]] = v;
+                                }
+                            });
+                        } else {
+                            const key = payload.path.replace(/^\/+/, '').split('/')[0];
+                            const idx = this.data.pesan.findIndex(p => p.id === key);
+                            if (idx > -1) this.data.pesan[idx] = { ...this.data.pesan[idx], ...payload.data };
+                        }
+                    });
+                },
+
+                applyAdminFilters() {
+                    if (this.userRole === 'guru') {
+                        const myName = String(this.userName).trim().toLowerCase();
+                        this.data.adminMateri = (this.data.materi || []).filter(m => String(m.guru || '').trim().toLowerCase() === myName);
+                        this.data.adminInformasi = (this.data.informasi || []).filter(i => String(i.penulis || '').trim().toLowerCase() === myName);
+                        this.data.adminTugas = (this.data.tugas || []).filter(t => String(t.guru || t.siswa || '').trim().toLowerCase() === myName);
+                    } else {
+                        this.data.adminMateri = this.data.materi || [];
+                        this.data.adminInformasi = this.data.informasi || [];
+                        this.data.adminTugas = this.data.tugas || [];
+                    }
+                },
+
+                isOwner(item) {
+                    if (this.userRole === 'admin') return true;
+                    const myName = String(this.userName).trim().toLowerCase();
+                    return String(item.guru || item.siswa || '').trim().toLowerCase() === myName || String(item.penulis || '').trim().toLowerCase() === myName;
+                },
+
+                async loadData() {
+                    this.isLoading = true;
+                    try {
+                        const [
+                            dbPengguna, dbMateri, dbTugas, dbKelas,
+                            dbJadwal, dbInformasi, dbPesan, dbBerkasGuru, dbPengaturan
+                        ] = await Promise.all([
+                            fbApi.get('Pengguna'),
+                            fbApi.get('Materi'),
+                            fbApi.get('Tugas'),
+                            fbApi.get('Kelas'),
+                            fbApi.get('Jadwal'),
+                            fbApi.get('Informasi'),
+                            fbApi.get('Pesan'),
+                            fbApi.get('BerkasGuru'),
+                            fbApi.get('Pengaturan')
+                        ]);
+
+                        const toArray = (obj) => obj ? Object.values(obj).filter(Boolean) : [];
+
+                        const users = toArray(dbPengguna);
+                        const materi = toArray(dbMateri);
+                        const tugas = toArray(dbTugas);
+                        const kelas = toArray(dbKelas);
+                        const jadwal = toArray(dbJadwal);
+                        const informasi = toArray(dbInformasi).sort((a, b) => (Number(a.orderIndex) || 0) - (Number(b.orderIndex) || 0));
+                        const pesan = toArray(dbPesan);
+                        const berkasGuru = toArray(dbBerkasGuru);
+                        const settings = dbPengaturan ? { ...this.data.settings, ...dbPengaturan } : this.data.settings;
+
+                        if (typeof settings.showLogo === 'string') {
+                            settings.showLogo = settings.showLogo.trim().toLowerCase() === 'true';
+                        }
+
+                        this.data = {
+                            ...this.data,
+                            stats: {
+                                siswaAktif: users.filter(u => String(u.role).toLowerCase() === 'siswa' && String(u.status).toLowerCase() === 'aktif').length,
+                                guruAktif: users.filter(u => String(u.role).toLowerCase() === 'guru' && String(u.status).toLowerCase() === 'aktif').length,
+                                totalMateri: materi.length,
+                                tugasPending: tugas.filter(t => t.status !== 'Selesai').length,
+                                tugasMenunggu: tugas.filter(t => t.status === 'Menunggu').length
+                            },
+                            materi, tugas, jadwal, informasi,
+                            adminUsers: users, adminKelas: kelas, adminSubmissions: tugas,
+                            pesan, berkasGuru, settings
+                        };
+                        this.applyAdminFilters();
+                    } catch (err) {
+                        this.showInfoList('Sinkronisasi Gagal', ['Gagal menarik data dari Firebase.', err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async saveRecord(collection, obj, cb) {
+                    this.isLoading = true;
+                    try {
+                        const cleanObj = { ...obj };
+                        delete cleanObj.isEdit;
+                        delete cleanObj.isManual;
+                        await fbApi.put(`${collection}/${cleanObj.id}`, cleanObj);
+                        await this.loadData();
+                        if (cb) cb();
+                    } catch (err) {
+                        this.showInfoList('Gagal Menyimpan', ['Terjadi kesalahan Firebase:', err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async saveSettings() {
+                    this.isLoading = true;
+                    try {
+                        const payload = {
+                            namaInstitusi: String(this.data.settings.namaInstitusi || ''),
+                            tahunAjaran: String(this.data.settings.tahunAjaran || ''),
+                            semester: String(this.data.settings.semester || ''),
+                            linkWebKimia: String(this.data.settings.linkWebKimia || ''),
+                            logoUrl: String(this.data.settings.logoUrl || ''),
+                            showLogo: this.data.settings.showLogo ? 'true' : 'false',
+                            cloudinaryCloudName: String(this.data.settings.cloudinaryCloudName || '').trim(),
+                            cloudinaryUploadPreset: String(this.data.settings.cloudinaryUploadPreset || '').trim()
+                        };
+                        await fbApi.put('Pengaturan', payload);
+                        await this.loadData();
+                        this.showInfoList('Berhasil', ['Konfigurasi Sistem Berhasil Disimpan ke Firebase!']);
+                    } catch (err) {
+                        this.showInfoList('Gagal Menyimpan', ['Terjadi kesalahan server:', err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                // =================================================================
+                // ENGINE UPLOAD FILE (CLOUDINARY OTOMATIS + FALLBACK FIREBASE <2MB)
+                // =================================================================
+                async uploadFileUniversal(fileObj, base64Data, fileName, mimeType, folder = 'lms_uploads') {
+                    const cloudName = (this.data.settings.cloudinaryCloudName || '').trim();
+                    const uploadPreset = (this.data.settings.cloudinaryUploadPreset || '').trim();
+
+                    if (cloudName && uploadPreset && fileObj) {
+                        const formData = new FormData();
+                        formData.append('file', fileObj);
+                        formData.append('upload_preset', uploadPreset);
+                        formData.append('folder', folder);
+
+                        const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error?.message || 'Gagal mengunggah ke Cloudinary.');
+                        return { success: true, url: data.secure_url };
+                    }
+
+                    if (fileObj && fileObj.size > 2 * 1024 * 1024) {
+                        throw new Error('File melebihi 2MB. Silakan atur Cloudinary di menu Pengaturan Sistem (Gratis) atau unggah file di bawah 2MB.');
+                    }
+                    const fileId = 'F' + Date.now() + Math.floor(Math.random() * 1000);
+                    await fbApi.put(`Files/${fileId}`, {
+                        id: fileId,
+                        name: fileName,
+                        mimeType: mimeType || 'application/octet-stream',
+                        data: base64Data,
+                        uploadedAt: new Date().toISOString()
+                    });
+                    return { success: true, url: `fbfile://${fileId}` };
+                },
+
+                async openFileLink(url, fallbackName = 'dokumen') {
+                    if (!url) {
+                        this.showInfoList('Info', ['Tidak ada tautan dokumen.']);
+                        return;
+                    }
+                    if (url.startsWith('http://') || url.startsWith('https://')) {
+                        window.open(url, '_blank');
+                        return;
+                    }
+                    if (url.startsWith('fbfile://')) {
+                        const fileId = url.replace('fbfile://', '');
+                        this.isLoading = true;
+                        try {
+                            const fileRec = await fbApi.get(`Files/${fileId}`);
+                            if (!fileRec || !fileRec.data) {
+                                this.showInfoList('File Tidak Ditemukan', ['File ini mungkin telah dihapus dari penyimpanan.']);
+                                return;
+                            }
+                            const res = await fetch(fileRec.data);
+                            const blob = await res.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            if (fileRec.mimeType && (fileRec.mimeType.startsWith('image/') || fileRec.mimeType === 'application/pdf')) {
+                                window.open(blobUrl, '_blank');
+                            } else {
+                                const a = document.createElement('a');
+                                a.href = blobUrl;
+                                a.download = fileRec.name || fallbackName;
+                                document.body.appendChild(a);
+                                a.click();
+                                a.remove();
+                            }
+                        } catch (err) {
+                            this.showInfoList('Gagal Membuka File', [err.message]);
+                        } finally {
+                            this.isLoading = false;
+                        }
+                        return;
+                    }
+                    this.showInfoList('Format Tautan', ['Tautan tidak dikenali: ' + url]);
+                },
+
+                handleLogoUpload(e) {
+                    const file = e.target.files[0]; if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        const img = new Image();
+                        img.onload = () => {
+                            const canvas = document.createElement('canvas'); const MAX_DIMENSION = 150; let width = img.width; let height = img.height;
+                            if (width > height) { if (width > MAX_DIMENSION) { height *= MAX_DIMENSION / width; width = MAX_DIMENSION; } }
+                            else { if (height > MAX_DIMENSION) { width *= MAX_DIMENSION / height; height = MAX_DIMENSION; } }
+                            canvas.width = width; canvas.height = height;
+                            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+                            const compressedBase64 = canvas.toDataURL('image/png', 0.9);
+                            if (compressedBase64.length > 80000) { this.showInfoList('Gagal Upload', ['Gambar terlalu besar walau dikompres.']); return; }
+                            this.data.settings.logoUrl = compressedBase64;
+                            this.data.settings.showLogo = true;
+                        };
+                        img.src = ev.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                },
+
+                handleGenFileUpload(e, targetField = 'general') {
+                    const f = e.target.files[0]; if (!f) return;
+                    const maxMB = (this.data.settings.cloudinaryCloudName && this.data.settings.cloudinaryUploadPreset) ? 15 : 2;
+                    if (f.size > maxMB * 1024 * 1024) {
+                        this.showInfoList('File Terlalu Besar', [`Maksimal ukuran file saat ini adalah ${maxMB}MB.`]);
+                        return;
+                    }
+                    const isGeneral = (targetField === 'general' || targetField === 'materi' || targetField === 'tugas');
+                    const uploadObj = isGeneral ? this.generalUploadForm : this.berkasUpload[targetField];
+                    uploadObj.fileObj = f;
+                    uploadObj.fileName = f.name;
+                    uploadObj.mimeType = f.type || 'application/octet-stream';
+                    const reader = new FileReader();
+                    reader.onload = (ev) => { uploadObj.fileData = ev.target.result; };
+                    reader.readAsDataURL(f);
+                },
+
+                async processGenUpload(targetField) {
+                    const uploadState = (targetField === 'materi' || targetField === 'tugas') ? this.generalUploadForm : this.berkasUpload[targetField];
+                    if (!uploadState.fileData) return;
+                    uploadState.isUploading = true;
+                    try {
+                        const res = await this.uploadFileUniversal(uploadState.fileObj, uploadState.fileData, uploadState.fileName, uploadState.mimeType, 'Materi_dan_Tugas_LMS');
+                        if (res && res.success) {
+                            if (targetField === 'materi') this.materiForm.fileName = res.url;
+                            if (targetField === 'tugas') this.tugasForm.link = res.url;
+                            if (targetField === 'modulAjar') this.berkasForm.modulAjar = res.url;
+                            if (targetField === 'prosem') this.berkasForm.prosem = res.url;
+                            if (targetField === 'prota') this.berkasForm.prota = res.url;
+                            this.showInfoList('Upload Berhasil', ['File berhasil diunggah dan tautan telah disisipkan.']);
+                            uploadState.fileObj = null; uploadState.fileData = null; uploadState.fileName = ''; uploadState.mimeType = '';
+                        }
+                    } catch (err) {
+                        this.showInfoList('Gagal Upload', [err.message]);
+                    } finally {
+                        uploadState.isUploading = false;
+                    }
+                },
+
+                confirmDelete(sheet, id, title) { this.itemToDelete = { sheet, id, title }; this.showDeleteConfirmModal = true; },
+                async executeDelete() {
+                    this.showDeleteConfirmModal = false;
+                    if (this.itemToDelete.sheet === 'Kelas') {
+                        await this.deleteKelasBesertaSiswa(this.itemToDelete.id, this.itemToDelete.title);
+                    } else {
+                        await this.deleteRecord(this.itemToDelete.sheet, this.itemToDelete.id, () => {
+                            this.showInfoList('Sukses', ['Data berhasil dihapus.']);
+                        });
+                    }
+                },
+                async deleteKelasBesertaSiswa(kelasId, namaKelas) {
+                    this.isLoading = true;
+                    try {
+                        await fbApi.delete(`Kelas/${kelasId}`);
+                        const fbUpdates = {};
+                        (this.data.adminUsers || []).forEach(u => {
+                            if (String(u.role).toLowerCase() === 'siswa' && String(u.info).trim().toLowerCase() === String(namaKelas).trim().toLowerCase()) {
+                                fbUpdates[u.id] = null;
+                            }
+                        });
+                        if (Object.keys(fbUpdates).length > 0) await fbApi.patch('Pengguna', fbUpdates);
+                        await this.loadData();
+                        this.showInfoList('Sukses', [`Kelas ${namaKelas} beserta data siswanya berhasil dihapus.`]);
+                    } catch (err) {
+                        this.showInfoList('Gagal Menghapus', [err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                async deleteRecord(sheet, id, cb) {
+                    this.isLoading = true;
+                    try {
+                        await fbApi.delete(`${sheet}/${id}`);
+                        await this.loadData();
+                        if (cb) cb();
+                    } catch (err) {
+                        this.showInfoList('Gagal Menghapus', [err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                openUserModal(u = null) { this.userForm = u ? { ...u, isEdit: true } : { id: 'U' + Date.now(), username: '', password: '', nama: '', role: 'Siswa', info: '', status: 'Aktif', isEdit: false }; this.showUserModal = true; },
+                openKelasModal(k = null) { this.kelasForm = k ? { ...k, isEdit: true } : { id: 'K' + Date.now(), namaKelas: '', waliKelas: '', jumlahSiswa: 0, isEdit: false }; this.showKelasModal = true; },
+                openMateriModal(m = null) {
+                    this.generalUploadForm = { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false };
+                    let targetArray = m && m.kelasTarget ? m.kelasTarget.split(',').map(s => s.trim()) : ['Semua'];
+                    this.materiForm = m ? { ...m, isEdit: true, kelasTarget: targetArray } : { id: 'M' + Date.now(), mapel: '', judul: '', deskripsi: '', guru: this.userName, cover: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&q=80', fileName: '', kelasTarget: ['Semua'], isEdit: false };
+                    this.showMateriModal = true;
+                },
+                openJadwalModal(j = null) {
+                    let targetArray = j && j.kelasTarget ? j.kelasTarget.split(',').map(s => s.trim()) : ['Semua'];
+                    this.jadwalForm = j ? { ...j, isEdit: true, kelasTarget: targetArray } : { id: 'J' + Date.now(), hari: 'Senin', jam: '', mapel: '', ruang: '', guru: this.userName, kelasTarget: ['Semua'], isEdit: false };
+                    this.showJadwalModal = true;
+                },
+                openTugasModal(t = null) {
+                    this.generalUploadForm = { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false };
+                    let targetArray = t && t.kelasTarget ? t.kelasTarget.split(',').map(s => s.trim()) : ['Semua'];
+                    this.tugasForm = t ? { ...t, isEdit: true, kelasTarget: targetArray, kkm: t.kkm || 75 } : { id: 'T' + Date.now(), mapel: '', judul: '', tipe: 'Tugas Online', deadline: '', link: '', status: 'Menunggu', nilai: '', siswa: this.userName, kelasTarget: ['Semua'], guru: this.userName, kkm: 75, isEdit: false };
+                    this.showTugasModal = true;
+                },
+                openInformasiModal(info = null) {
+                    let today = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+                    let targetArray = info && info.kelasTarget ? info.kelasTarget.split(',').map(s => s.trim()) : ['Semua'];
+                    this.informasiForm = info ? { ...info, isEdit: true, kelasTarget: targetArray } : { id: 'I' + Date.now(), judul: '', isi: '', tanggal: today, penulis: this.userName, kelasTarget: ['Semua'], orderIndex: this.data.informasi.length, isEdit: false };
+                    this.showInformasiModal = true;
+                    setTimeout(() => { let editor = document.getElementById('richTextEditor'); if (editor) editor.innerHTML = this.informasiForm.isi || ''; }, 50);
+                },
+
+                execCmd(command, value = null) { document.execCommand(command, false, value); this.updateInformasiFormIsi(); },
+                updateInformasiFormIsi() { let editor = document.getElementById('richTextEditor'); if (editor) this.informasiForm.isi = editor.innerHTML; },
+                moveInfoUp(index) {
+                    if (index > 0) {
+                        let infoList = [...this.data.informasi];
+                        [infoList[index], infoList[index - 1]] = [infoList[index - 1], infoList[index]];
+                        this.data.informasi = infoList;
+                        this.saveInfoOrder();
+                    }
+                },
+                moveInfoDown(index) {
+                    let infoList = [...this.data.informasi];
+                    if (index < infoList.length - 1) {
+                        [infoList[index], infoList[index + 1]] = [infoList[index + 1], infoList[index]];
+                        this.data.informasi = infoList;
+                        this.saveInfoOrder();
+                    }
+                },
+                async saveInfoOrder() {
+                    this.isLoading = true;
+                    try {
+                        const patchData = {};
+                        this.data.informasi.forEach((rec, idx) => {
+                            rec.orderIndex = idx;
+                            patchData[rec.id] = rec;
+                        });
+                        await fbApi.patch('Informasi', patchData);
+                        await this.loadData();
+                    } catch (err) {
+                        this.showInfoList('Gagal', [err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                getGuruBerkasTargets() {
+                    const myName = String(this.userName).trim().toLowerCase(); const myUsername = String(this.loginForm.username).trim().toLowerCase(); let targets = [];
+                    (this.data.jadwal || []).forEach(j => {
+                        const jGuru = String(j.guru).trim().toLowerCase();
+                        if (jGuru === myName || jGuru.includes(myName) || myName.includes(jGuru) || jGuru === myUsername) {
+                            let kelasArr = (j.kelasTarget || 'Semua').split(',').map(s => s.trim());
+                            kelasArr.forEach(k => { let exists = targets.find(t => String(t.mapel).toLowerCase() === String(j.mapel).toLowerCase() && String(t.kelas).toLowerCase() === String(k).toLowerCase()); if (!exists) targets.push({ mapel: j.mapel, kelas: k, guru: j.guru }); });
+                        }
+                    });
+                    let finalTargets = targets.map(t => {
+                        let berkas = (this.data.berkasGuru || []).find(b => (String(b.guru).trim().toLowerCase() === myName || String(b.guru).trim().toLowerCase() === myUsername) && String(b.mapel).toLowerCase() === String(t.mapel).toLowerCase() && String(b.kelasTarget).toLowerCase() === String(t.kelas).toLowerCase());
+                        return { id: berkas ? berkas.id : '', guru: t.guru, mapel: t.mapel, kelas: t.kelas, modulAjar: berkas ? berkas.modulAjar : '', prosem: berkas ? berkas.prosem : '', prota: berkas ? berkas.prota : '', waktuUpdate: berkas ? berkas.waktuUpdate : '' };
+                    });
+                    (this.data.berkasGuru || []).forEach(b => {
+                        const bGuru = String(b.guru).trim().toLowerCase();
+                        if (bGuru === myName || bGuru === myUsername) {
+                            let exists = finalTargets.find(ft => String(ft.mapel).toLowerCase() === String(b.mapel).toLowerCase() && String(ft.kelas).toLowerCase() === String(b.kelasTarget).toLowerCase());
+                            if (!exists) finalTargets.push({ id: b.id, guru: b.guru, mapel: b.mapel, kelas: b.kelasTarget, modulAjar: b.modulAjar, prosem: b.prosem, prota: b.prota, waktuUpdate: b.waktuUpdate });
+                        }
+                    });
+                    return finalTargets;
+                },
+                getAdminMonitoringBerkas() {
+                    let targets = [];
+                    (this.data.jadwal || []).forEach(j => {
+                        let kelasArr = (j.kelasTarget || 'Semua').split(',').map(s => s.trim());
+                        kelasArr.forEach(k => { let exists = targets.find(t => String(t.guru).toLowerCase() === String(j.guru).toLowerCase() && String(t.mapel).toLowerCase() === String(j.mapel).toLowerCase() && String(t.kelas).toLowerCase() === String(k).toLowerCase()); if (!exists) targets.push({ guru: j.guru, mapel: j.mapel, kelas: k }); });
+                    });
+                    let result = targets.map(t => {
+                        let berkas = (this.data.berkasGuru || []).find(b => String(b.guru).trim().toLowerCase() === String(t.guru).trim().toLowerCase() && String(b.mapel).trim().toLowerCase() === String(t.mapel).trim().toLowerCase() && String(b.kelasTarget).trim().toLowerCase() === String(t.kelas).trim().toLowerCase());
+                        return { ...t, id: berkas ? berkas.id : '', modulAjar: berkas ? berkas.modulAjar : '', prosem: berkas ? berkas.prosem : '', prota: berkas ? berkas.prota : '', waktuUpdate: berkas ? berkas.waktuUpdate : '' };
+                    });
+                    (this.data.berkasGuru || []).forEach(b => {
+                        let exists = result.find(r => String(r.guru).toLowerCase() === String(b.guru).toLowerCase() && String(r.mapel).toLowerCase() === String(b.mapel).toLowerCase() && String(r.kelas).toLowerCase() === String(b.kelasTarget).toLowerCase());
+                        if (!exists) result.push({ id: b.id, guru: b.guru, mapel: b.mapel, kelas: b.kelasTarget, modulAjar: b.modulAjar, prosem: b.prosem, prota: b.prota, waktuUpdate: b.waktuUpdate });
+                    });
+                    if (this.adminFilterMapelBerkas !== 'Semua') result = result.filter(r => r.mapel === this.adminFilterMapelBerkas);
+                    return result.sort((a, b) => a.mapel.localeCompare(b.mapel) || a.kelas.localeCompare(b.kelas));
+                },
+
+                openBerkasModal(target) {
+                    this.generalUploadForm = { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false };
+                    this.berkasUpload = {
+                        modulAjar: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                        prosem: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false },
+                        prota: { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false }
+                    };
+                    if (target && target.id) { let targetArray = target.kelas ? target.kelas.split(',').map(s => s.trim()) : ['Semua']; this.berkasForm = { ...target, kelasTarget: targetArray, isEdit: true, isManual: false }; }
+                    else if (target) { let targetArray = target.kelas ? target.kelas.split(',').map(s => s.trim()) : ['Semua']; this.berkasForm = { id: 'B' + Date.now() + Math.floor(Math.random() * 100), guru: target.guru, mapel: target.mapel, kelasTarget: targetArray, modulAjar: '', prosem: '', prota: '', waktuUpdate: '', isEdit: false, isManual: false }; }
+                    else { this.berkasForm = { id: 'B' + Date.now() + Math.floor(Math.random() * 100), guru: this.userName, mapel: '', kelasTarget: ['Semua'], modulAjar: '', prosem: '', prota: '', waktuUpdate: '', isEdit: false, isManual: true }; }
+                    this.showBerkasModal = true;
+                },
+                saveBerkas() {
+                    this.berkasForm.waktuUpdate = new Date().toLocaleString('id-ID');
+                    this.saveRecord('BerkasGuru', { ...this.berkasForm, kelasTarget: this.berkasForm.kelasTarget.join(', ') }, () => {
+                        this.showBerkasModal = false;
+                        this.showInfoList('Sukses', ['Berkas Perangkat berhasil disimpan.']);
+                    });
+                },
+
+                showInfoList(title, list) { this.infoModalTitle = title; this.infoModalList = list && list.length ? list : ['Data Kosong']; this.showInfoModal = true; },
+                openChangePasswordModal() { this.changePasswordForm = { passwordBaru: '', konfirmasiPassword: '' }; this.showChangePasswordModal = true; },
+                submitChangePassword() {
+                    if (this.changePasswordForm.passwordBaru !== this.changePasswordForm.konfirmasiPassword) { this.showInfoList('Gagal', ['Konfirmasi password tidak cocok!']); return; }
+                    if (this.changePasswordForm.passwordBaru.length < 6) { this.showInfoList('Gagal', ['Password minimal 6 karakter.']); return; }
+                    let currentUser = (this.data.adminUsers || []).find(u => u.id === this.userId);
+                    if (!currentUser) return;
+                    let updatedUser = { ...currentUser, password: this.changePasswordForm.passwordBaru };
+                    this.saveRecord('Pengguna', updatedUser, () => {
+                        this.showChangePasswordModal = false;
+                        this.showInfoList('Berhasil', ['Password berhasil diubah.']);
+                        this.loginForm.password = this.changePasswordForm.passwordBaru;
+                    });
+                },
+
+                openDetailMateri(materi) { this.selectedMateri = materi; this.showDetailMateriModal = true; },
+                getTingkatKelas(info) { return !info ? 'Semua' : String(info).toUpperCase().trim(); },
+                getJumlahSiswaKelas(namaKelas) { if (!namaKelas || !this.data.adminUsers) return 0; return this.data.adminUsers.filter(u => String(u.role).toLowerCase() === 'siswa' && String(u.info).trim().toLowerCase() === String(namaKelas).trim().toLowerCase()).length; },
+                isKelasTargetMatch(targetStr) { if (this.userRole !== 'siswa' || !targetStr) return true; let arr = targetStr.split(',').map(s => s.trim().toUpperCase()); if (arr.includes('SEMUA')) return true; return arr.includes(this.getTingkatKelas(this.userInfo)); },
+
+                getStudentsForGrading() { if (!this.activeTaskForGrading) return []; return (this.data.adminUsers || []).filter(u => String(u.role).toLowerCase() === 'siswa' && (this.activeTaskForGrading.kelasTarget.includes('Semua') || this.activeTaskForGrading.kelasTarget.includes(this.getTingkatKelas(u.info)))); },
+                openKelolaNilai(tugas) {
+                    this.activeTaskForGrading = tugas; let parsedGrades = {}; try { parsedGrades = tugas.nilai ? JSON.parse(tugas.nilai) : {}; } catch (e) {}
+                    let students = this.getStudentsForGrading(); let formGrades = {}; students.forEach(s => { formGrades[s.id] = parsedGrades[s.id] !== undefined ? parsedGrades[s.id] : ''; });
+                    this.studentGrades = formGrades; this.showNilaiModal = true;
+                },
+                handlePasteNilai(e, startIndex) {
+                    const pastedData = (e.clipboardData || window.clipboardData).getData('text'); if (!pastedData) return; const values = pastedData.split(/\r\n|\n|\r/); if (values.length <= 1) return; e.preventDefault();
+                    const students = this.getStudentsForGrading();
+                    for (let i = 0; i < values.length; i++) { if (startIndex + i < students.length) { const studentId = students[startIndex + i].id; let val = values[i].trim(); if (val !== '' && !isNaN(val)) this.studentGrades[studentId] = Number(val); else if (val === '') this.studentGrades[studentId] = ''; } }
+                },
+                saveNilai() {
+                    let cleanedGrades = {}; for (let id in this.studentGrades) { if (this.studentGrades[id] !== '' && this.studentGrades[id] !== null) cleanedGrades[id] = this.studentGrades[id]; }
+                    this.activeTaskForGrading.nilai = JSON.stringify(cleanedGrades);
+                    this.saveRecord('Tugas', this.activeTaskForGrading, () => { this.showNilaiModal = false; this.showInfoList('Sukses', ['Rekap nilai berhasil disimpan.']); });
+                },
+                exportNilaiExcel() {
+                    if (!this.activeTaskForGrading) return;
+                    const students = this.getStudentsForGrading();
+                    const rows = students.map((s, i) => {
+                        const sub = this.getSubmissionForStudent(s.id);
+                        return {
+                            No: i + 1,
+                            Username_NIS: s.username,
+                            Nama_Siswa: s.nama,
+                            Kelas: s.info || '-',
+                            Nilai: this.studentGrades[s.id] !== '' ? this.studentGrades[s.id] : 'Belum Dinilai',
+                            Status_Pengumpulan: sub ? `Terkirim (${sub.date})` : 'Belum Mengumpulkan'
+                        };
+                    });
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Rekap_Nilai');
+                    const safeTitle = (this.activeTaskForGrading.judul || 'Tugas').replace(/[^a-zA-Z0-9]/g, '_');
+                    XLSX.writeFile(wb, `Rekap_Nilai_${safeTitle}.xlsx`);
+                },
+                exportUsersExcel() {
+                    const rows = (this.data.adminUsers || []).map((u, i) => ({
+                        No: i + 1,
+                        ID: u.id,
+                        Username: u.username,
+                        Password: u.password,
+                        Nama: u.nama,
+                        Role: u.role,
+                        Info_Kelas: u.info,
+                        Status: u.status
+                    }));
+                    const ws = XLSX.utils.json_to_sheet(rows);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Data_Pengguna');
+                    XLSX.writeFile(wb, `Data_Pengguna_LMS_${new Date().toISOString().slice(0, 10)}.xlsx`);
+                },
+                async backupDatabaseJSON() {
+                    this.isLoading = true;
+                    try {
+                        const allData = await fbApi.get('');
+                        const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `Backup_LMS_Firebase_${new Date().toISOString().slice(0, 10)}.json`;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        URL.revokeObjectURL(url);
+                    } catch (err) {
+                        this.showInfoList('Gagal Backup', [err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                getStudentScore(tugas) { try { let grades = tugas.nilai ? JSON.parse(tugas.nilai) : {}; return grades[this.getMyId()] !== undefined ? grades[this.getMyId()] : null; } catch (e) { return null; } },
+                getStudentSubmission(tugas) { try { let p = tugas.pengumpulan ? JSON.parse(tugas.pengumpulan) : {}; return p[this.getMyId()] || null; } catch (e) { return null; } },
+                getSubmissionForStudent(studentId) { if (!this.activeTaskForGrading) return null; try { let p = this.activeTaskForGrading.pengumpulan ? JSON.parse(this.activeTaskForGrading.pengumpulan) : {}; return p[studentId] || null; } catch (e) { return null; } },
+                isDeadlinePassed(deadlineStr) { if (!deadlineStr) return false; const today = new Date(); today.setHours(0, 0, 0, 0); const deadlineDate = new Date(deadlineStr); deadlineDate.setHours(0, 0, 0, 0); return today > deadlineDate; },
+                openUploadTugasModal(tugas) { this.uploadTugasForm = { tugasId: tugas.id, fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false }; this.showUploadTugasModal = true; },
+
+                handleTugasFileUpload(e) {
+                    const f = e.target.files[0]; if (!f) return;
+                    const maxMB = (this.data.settings.cloudinaryCloudName && this.data.settings.cloudinaryUploadPreset) ? 25 : 2;
+                    if (f.size > maxMB * 1024 * 1024) {
+                        this.showInfoList('File Terlalu Besar', [`Maksimal ukuran file saat ini adalah ${maxMB}MB.`]);
+                        return;
+                    }
+                    this.uploadTugasForm.fileObj = f;
+                    this.uploadTugasForm.fileName = f.name;
+                    this.uploadTugasForm.mimeType = f.type || 'application/octet-stream';
+                    const reader = new FileReader();
+                    reader.onload = (ev) => { this.uploadTugasForm.fileData = ev.target.result; };
+                    reader.readAsDataURL(f);
+                },
+
+                async processUploadTugas() {
+                    if (!this.uploadTugasForm.fileData) return;
+                    this.uploadTugasForm.isUploading = true;
+                    try {
+                        const res = await this.uploadFileUniversal(
+                            this.uploadTugasForm.fileObj,
+                            this.uploadTugasForm.fileData,
+                            this.uploadTugasForm.fileName,
+                            this.uploadTugasForm.mimeType,
+                            'Pengumpulan_Tugas_LMS'
+                        );
+                        if (res && res.success) {
+                            let tugasIdx = this.data.tugas.findIndex(t => t.id === this.uploadTugasForm.tugasId);
+                            let tugas = { ...this.data.tugas[tugasIdx] };
+                            let pengumpulan = {};
+                            try { pengumpulan = tugas.pengumpulan ? JSON.parse(tugas.pengumpulan) : {}; } catch (e) {}
+                            pengumpulan[this.getMyId()] = {
+                                url: res.url,
+                                name: this.uploadTugasForm.fileName,
+                                date: new Date().toLocaleDateString('id-ID')
+                            };
+                            tugas.pengumpulan = JSON.stringify(pengumpulan);
+                            await this.saveRecord('Tugas', tugas, () => {
+                                this.showUploadTugasModal = false;
+                                this.showInfoList('Berhasil', ['Jawaban tugas berhasil diunggah.']);
+                            });
+                        }
+                    } catch (err) {
+                        this.showInfoList('Error Upload', [err.message]);
+                    } finally {
+                        this.uploadTugasForm.isUploading = false;
+                    }
+                },
+
+                getMateriList() { let list = this.data.materi || []; if (this.userRole === 'guru') list = list.filter(m => String(m.guru || '').trim().toLowerCase() === String(this.userName).trim().toLowerCase()); return list.map(m => m.judul); },
+                getTugasPendingList() { let list = this.data.tugas || []; if (this.userRole === 'guru') list = list.filter(t => String(t.guru || t.siswa || '').trim().toLowerCase() === String(this.userName).trim().toLowerCase()); return list.filter(t => t.status !== 'Selesai').map(t => t.judul); },
+                getSiswaAktifList() { return (this.data.adminUsers || []).filter(u => String(u.role).toLowerCase() === 'siswa' && String(u.status).toLowerCase() === 'aktif').map(u => u.nama); },
+                getGuruAktifList() { return (this.data.adminUsers || []).filter(u => String(u.role).toLowerCase() === 'guru' && String(u.status).toLowerCase() === 'aktif').map(u => u.nama); },
+
+                handleFileUpload(e) { const f = e.target.files[0]; if (!f) return; this.uploadForm.fileName = f.name; const r = new FileReader(); r.onload = (ev) => { const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); this.uploadForm.fileData = data.map(x => ({ nis: String(x.NIS || x.nis || ''), nama: String(x.NAMA || x.nama || '') })).filter(x => x.nis && x.nama); }; r.readAsArrayBuffer(f); },
+                async processUpload() {
+                    if (!this.uploadForm.fileData || !this.uploadForm.fileData.length) return;
+                    this.uploadForm.isUploading = true;
+                    try {
+                        const patchData = {};
+                        const ts = Date.now();
+                        this.uploadForm.fileData.forEach((s, i) => {
+                            const id = 'U' + ts + i;
+                            patchData[id] = { id, username: s.nis, password: 'siswa123', nama: s.nama, role: 'Siswa', info: this.uploadForm.kelas, status: 'Aktif' };
+                        });
+                        await fbApi.patch('Pengguna', patchData);
+                        this.showUploadModal = false;
+                        await this.loadData();
+                        this.showInfoList('Sukses', [`${this.uploadForm.fileData.length} data siswa berhasil diimpor ke Firebase.`]);
+                    } catch (err) {
+                        this.showInfoList('Gagal Impor', [err.message]);
+                    } finally {
+                        this.uploadForm.isUploading = false;
+                    }
+                },
+                downloadUserTemplate() { const ws_data = [["username", "password", "nama", "role", "info", "status"], ["siswa01", "123456", "Siswa Contoh", "Siswa", "X.1", "Aktif"]]; const ws = XLSX.utils.aoa_to_sheet(ws_data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Template_Pengguna"); XLSX.writeFile(wb, "Template_Data_Pengguna.xlsx"); },
+                handleUserFileUpload(e) { const f = e.target.files[0]; if (!f) return; this.uploadUserForm.fileName = f.name; const r = new FileReader(); r.onload = (ev) => { const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' }); const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); this.uploadUserForm.fileData = data.map(x => ({ username: String(x.username || x.USERNAME || ''), password: String(x.password || x.PASSWORD || '123456'), nama: String(x.nama || x.NAMA || ''), role: String(x.role || x.ROLE || 'Siswa'), info: String(x.info || x.INFO || ''), status: String(x.status || x.STATUS || 'Aktif') })).filter(x => x.username && x.nama); }; r.readAsArrayBuffer(f); },
+                async processUserUpload() {
+                    if (!this.uploadUserForm.fileData || !this.uploadUserForm.fileData.length) return;
+                    this.uploadUserForm.isUploading = true;
+                    try {
+                        const patchData = {};
+                        const ts = Date.now();
+                        this.uploadUserForm.fileData.forEach((u, i) => {
+                            const id = 'U' + ts + i;
+                            patchData[id] = { id, ...u };
+                        });
+                        await fbApi.patch('Pengguna', patchData);
+                        this.showUploadUserModal = false;
+                        await this.loadData();
+                        this.showInfoList('Sukses', [`${this.uploadUserForm.fileData.length} pengguna berhasil diimpor ke Firebase.`]);
+                    } catch (err) {
+                        this.showInfoList('Gagal Impor', [err.message]);
+                    } finally {
+                        this.uploadUserForm.isUploading = false;
+                    }
+                },
+
+                logout() { this.isLoggedIn = false; this.activeTab = 'dashboard'; this.showLogoutModal = false; this.loginForm.password = ''; if (this.chatEventSource) this.chatEventSource.close(); },
+                getMenuLabel(id) { return this.menuItems.find(m => m.id === id)?.label || 'Menu'; },
+                getMyId() { return this.userId || (this.data.adminUsers.find(u => String(u.username) === String(this.loginForm.username)) || {}).id; },
+
+                getUnreadTotal() { let myId = String(this.getMyId()); return (this.data.pesan || []).filter(p => String(p.penerimaId) === myId && p.isRead !== 'true').length; },
+                getChatUsers() {
+                    let myId = String(this.getMyId()); let search = this.chatSearch.toLowerCase();
+                    return (this.data.adminUsers || []).filter(u => String(u.id) !== myId && u.nama.toLowerCase().includes(search)).map(u => {
+                        let uId = String(u.id);
+                        let msgs = (this.data.pesan || []).filter(p => (String(p.pengirimId) === uId && String(p.penerimaId) === myId) || (String(p.pengirimId) === myId && String(p.penerimaId) === uId)).sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
+                        let lastMsg = msgs.length ? msgs[msgs.length - 1] : null;
+                        let unread = (this.data.pesan || []).filter(p => String(p.pengirimId) === uId && String(p.penerimaId) === myId && p.isRead !== 'true').length;
+                        return { ...u, lastMsg, unread };
+                    }).sort((a, b) => { if (b.lastMsg && a.lastMsg) return new Date(b.lastMsg.waktu) - new Date(a.lastMsg.waktu); if (b.lastMsg) return 1; if (a.lastMsg) return -1; return 0; });
+                },
+                openChat(user) { this.activeChatUser = user; this.markChatReadBackground(user.id); this.scrollToBottom(); },
+                closeChat() { this.activeChatUser = null; },
+                async markChatReadBackground(senderId) {
+                    let myId = String(this.getMyId());
+                    let sId = String(senderId);
+                    let patchData = {};
+                    (this.data.pesan || []).forEach(p => {
+                        if (String(p.pengirimId) === sId && String(p.penerimaId) === myId && p.isRead !== 'true') {
+                            p.isRead = 'true';
+                            patchData[`${p.id}/isRead`] = 'true';
+                        }
+                    });
+                    if (Object.keys(patchData).length > 0) {
+                        try { await fbApi.patch('Pesan', patchData); } catch (e) {}
+                    }
+                },
+                async sendMessage() {
+                    if (!this.chatMessage.trim() || !this.activeChatUser) return;
+                    let myId = this.getMyId();
+                    let newMsg = { id: 'P' + Date.now() + Math.floor(Math.random() * 100), pengirimId: myId, penerimaId: this.activeChatUser.id, pesan: this.chatMessage.trim(), waktu: new Date().toISOString(), isRead: 'false' };
+                    this.chatMessage = '';
+                    this.scrollToBottom();
+                    try { await fbApi.put(`Pesan/${newMsg.id}`, newMsg); } catch (err) { this.showInfoList('Gagal Kirim', [err.message]); }
+                },
+                scrollToBottom() { setTimeout(() => { let box = document.getElementById('chatContainer'); if (box) box.scrollTop = box.scrollHeight; }, 100); },
+                handleChatFileUpload(e) {
+                    const f = e.target.files[0]; if (!f) return;
+                    const maxMB = (this.data.settings.cloudinaryCloudName && this.data.settings.cloudinaryUploadPreset) ? 10 : 2;
+                    if (f.size > maxMB * 1024 * 1024) { this.showInfoList('File Terlalu Besar', [`Maksimal ukuran file Chat saat ini adalah ${maxMB}MB.`]); return; }
+                    this.chatUpload.fileObj = f;
+                    this.chatUpload.fileName = f.name;
+                    this.chatUpload.mimeType = f.type || 'application/octet-stream';
+                    const reader = new FileReader();
+                    reader.onload = (ev) => { this.chatUpload.fileData = ev.target.result; this.processChatUpload(); };
+                    reader.readAsDataURL(f);
+                    e.target.value = '';
+                },
+                async processChatUpload() {
+                    this.chatUpload.isUploading = true;
+                    try {
+                        const res = await this.uploadFileUniversal(this.chatUpload.fileObj, this.chatUpload.fileData, this.chatUpload.fileName, this.chatUpload.mimeType, 'Chat_LMS');
+                        if (res && res.success) await this.sendChatFile(res.url, this.chatUpload.fileName, this.chatUpload.mimeType);
+                    } catch (err) {
+                        this.showInfoList('Gagal Upload', [err.message]);
+                    } finally {
+                        this.chatUpload = { fileObj: null, fileData: null, fileName: '', mimeType: '', isUploading: false };
+                    }
+                },
+                async sendChatFile(url, filename, mimetype) {
+                    let msgText = `FILE::${url}::${filename}::${mimetype}`;
+                    let newMsg = { id: 'P' + Date.now() + Math.floor(Math.random() * 100), pengirimId: this.getMyId(), penerimaId: this.activeChatUser.id, pesan: msgText, waktu: new Date().toISOString(), isRead: 'false' };
+                    this.scrollToBottom();
+                    await fbApi.put(`Pesan/${newMsg.id}`, newMsg);
+                },
+                parseChatMessage(pesan) { if (pesan && typeof pesan === 'string' && pesan.startsWith('FILE::')) { let parts = pesan.split('::'); return { isFile: true, url: parts[1], name: parts[2], mime: parts[3] || '' }; } return { isFile: false, text: pesan }; },
+                async clearChatHistoryUI() {
+                    if (!this.activeChatUser) return;
+                    this.isLoading = true;
+                    const myId = String(this.getMyId());
+                    const otherId = String(this.activeChatUser.id);
+                    try {
+                        const patchData = {};
+                        (this.data.pesan || []).forEach(p => {
+                            const pPengirim = String(p.pengirimId);
+                            const pPenerima = String(p.penerimaId);
+                            if ((pPengirim === myId && pPenerima === otherId) || (pPengirim === otherId && pPenerima === myId)) {
+                                if (p.id) patchData[p.id] = null;
+                            }
+                        });
+                        if (Object.keys(patchData).length === 0) {
+                            this.showInfoList('Info', ['Tidak ada riwayat percakapan untuk dihapus.']);
+                            return;
+                        }
+                        await fbApi.patch('Pesan', patchData);
+                        this.data.pesan = (this.data.pesan || []).filter(p => {
+                            const pPengirim = String(p.pengirimId);
+                            const pPenerima = String(p.penerimaId);
+                            return !((pPengirim === myId && pPenerima === otherId) || (pPengirim === otherId && pPenerima === myId));
+                        });
+                        this.showInfoList('Sukses', ['Riwayat percakapan berhasil dihapus.']);
+                    } catch (err) {
+                        this.showInfoList('Gagal', [err.message]);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+                getCurrentDate() { return new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }); },
+                formatDate(d) { return d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'; },
+                refreshData() { this.loadData(); }
+            };
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+
+<body class="bg-slate-50 text-slate-800" x-data="lmsApp()">
+    <!-- Splash Screen -->
+    <div x-show="!isAppReady" class="fixed inset-0 z-[999] flex flex-col items-center justify-center bg-gradient-to-br from-[#1e3a8a] to-[#047857]">
+        <div class="animate-spin rounded-full h-10 w-10 border-4 border-white border-t-transparent mb-4"></div>
+        <p class="text-white text-[10px] font-bold tracking-[3px] uppercase animate-pulse">Memuat Sistem...</p>
+    </div>
+
+    <!-- Login Screen -->
+    <div x-show="isAppReady && !isLoggedIn" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-[#1e3a8a] to-[#047857]">
+        <div class="relative w-full max-w-[430px] bg-white rounded-2xl shadow-2xl p-8 sm:p-9 m-4 transition-all transform scale-100">
+            <div class="flex flex-col items-center text-center mb-7">
+                <template x-if="data.settings.showLogo && data.settings.logoUrl">
+                    <img :src="data.settings.logoUrl" alt="Logo Institusi" class="h-20 sm:h-24 w-auto logo-maintain mb-3.5 mx-auto drop-shadow-sm rounded-lg">
+                </template>
+                <h1 class="text-[20px] sm:text-[23px] font-black text-[#1e3a8a] tracking-tight leading-tight whitespace-nowrap mb-1.5" x-text="data.settings.namaInstitusi"></h1>
+                <p class="text-[12px] sm:text-[13px] text-[#10b981] font-bold tracking-wide">Transformasi Digital untuk Masa Depan</p>
+            </div>
+            
+            <h2 class="text-base font-bold text-slate-800 mb-5">Masuk Portal LMS</h2>
+            <div x-show="loginError" class="mb-5 bg-[#fce8e8] text-[#c81e1e] p-3 rounded-lg text-[13px] flex items-center font-medium" style="display: none;">
+                <i class="ph-fill ph-x-circle text-lg mr-2 shrink-0"></i><span x-text="loginError"></span>
+            </div>
+            <form @submit.prevent="login()" class="space-y-4">
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Username / NIS</label>
+                    <input type="text" x-model="loginForm.username" required placeholder="Masukkan username / NIS" class="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a]/20 focus:border-[#1e3a8a] outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wide">Password</label>
+                    <input type="password" x-model="loginForm.password" required placeholder="Masukkan password" class="w-full px-4 py-3 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#1e3a8a]/20 focus:border-[#1e3a8a] outline-none transition-colors">
+                </div>
+                <button type="submit" :disabled="loginLoading" class="w-full bg-[#1e3a8a] hover:bg-[#1e40af] text-white font-bold py-3.5 rounded-xl text-sm transition-colors flex justify-center items-center mt-4">
+                    <i x-show="!loginLoading" class="ph-bold ph-sign-in mr-2 text-lg"></i>
+                    <span x-show="!loginLoading">Masuk Portal LMS</span>
+                    <div x-show="loginLoading" class="animate-spin rounded-full h-5 w-5 border-b-2 border-white" style="display: none;"></div>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App UI -->
+    <div x-show="isAppReady && isLoggedIn" x-cloak class="flex h-screen overflow-hidden w-full">
+        <!-- Mobile Drawer Backdrop -->
+        <div x-show="mobileMenuOpen" @click="mobileMenuOpen = false" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-30 md:hidden" style="display: none;"></div>
+
+        <!-- Sidebar Navigation (Desktop & Mobile Drawer) -->
+        <aside :class="mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'" class="fixed md:static inset-y-0 left-0 flex flex-col w-64 bg-[#0f172a] text-white shrink-0 shadow-xl z-40 transition-transform duration-200">
+            <div class="flex flex-col items-center justify-center min-h-[64px] py-4 border-b border-slate-800 px-4 text-center relative">
+                <button @click="mobileMenuOpen = false" class="md:hidden absolute top-4 right-4 text-slate-400 hover:text-white"><i class="ph-bold ph-x text-lg"></i></button>
+                <template x-if="data.settings.showLogo && data.settings.logoUrl">
+                    <img :src="data.settings.logoUrl" alt="Logo Institusi" class="h-16 w-auto logo-maintain mb-3 drop-shadow-md rounded-lg">
+                </template>
+                <h1 class="text-[15px] font-black tracking-tight text-white leading-tight whitespace-nowrap">Sistem Akademik <span class="text-[#10b981]">Terpadu</span></h1>
+            </div>
+            
+            <div class="p-5 overflow-y-auto custom-scrollbar flex-1">
+                <p class="text-[9px] text-slate-500 uppercase font-black tracking-[2px] mb-4 ml-1">Menu Navigasi</p>
+                <nav class="space-y-1">
+                    <template x-for="item in menuItems" :key="item.id">
+                        <button x-show="(item.roles || []).includes(userRole)" 
+                            @click="activeTab = item.id; mobileMenuOpen = false" 
+                            :class="activeTab === item.id ? 'bg-[#1e3a8a] text-white shadow-lg shadow-blue-900/30' : 'text-slate-400 hover:bg-slate-800 hover:text-white'"
+                            class="w-full flex items-center px-4 py-3 rounded-xl transition-all duration-150 text-left mb-1">
+                            <i :class="item.icon" class="text-lg mr-3"></i>
+                            <span class="text-xs font-semibold whitespace-nowrap flex-1" x-text="item.label"></span>
+                            <template x-if="item.id === 'chat' && getUnreadTotal() > 0">
+                                <span class="bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md animate-bounce" x-text="getUnreadTotal()"></span>
+                            </template>
+                        </button>
+                    </template>
+                </nav>
+            </div>
+            
+            <div class="p-5 border-t border-slate-800 bg-slate-900/50">
+                <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-black text-slate-300" x-text="userName ? userName.charAt(0).toUpperCase() : 'U'"></div>
+                    <div class="ml-3 overflow-hidden">
+                        <p class="text-xs font-bold truncate mb-0.5" x-text="userName"></p>
+                        <p class="text-[10px] text-[#10b981] uppercase font-bold tracking-wider" x-text="userRole"></p>
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <button @click="openChangePasswordModal(); mobileMenuOpen = false" class="w-full py-2.5 bg-slate-800/50 hover:bg-[#1e3a8a] text-slate-400 hover:text-white rounded-xl transition-all text-[11px] font-black uppercase flex items-center justify-center">
+                        <i class="ph-bold ph-lock-key mr-2"></i> Ganti Password
+                    </button>
+                    <button @click="showLogoutModal = true; mobileMenuOpen = false" class="w-full py-2.5 bg-slate-800/50 hover:bg-red-600 text-slate-400 hover:text-white rounded-xl transition-all text-[11px] font-black uppercase flex items-center justify-center">
+                        <i class="ph-bold ph-sign-out mr-2"></i> Keluar Sesi
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <div class="flex-1 flex flex-col h-screen overflow-hidden">
+            <!-- Header Desktop & Mobile -->
+            <header class="flex bg-white h-16 items-center justify-between px-4 md:px-8 shadow-sm border-b border-slate-100 shrink-0">
+                <div class="flex items-center space-x-3">
+                    <button @click="mobileMenuOpen = true" class="md:hidden p-2 bg-slate-50 text-slate-700 rounded-xl border border-slate-200">
+                        <i class="ph-bold ph-list text-xl"></i>
+                    </button>
+                    <h2 class="text-xs font-black text-slate-800 uppercase tracking-[2px]" x-text="getMenuLabel(activeTab)"></h2>
+                </div>
+                <div class="flex items-center space-x-3 md:space-x-4">
+                    <span class="hidden sm:inline-block text-[11px] font-bold text-slate-500 bg-slate-50 px-4 py-2 rounded-full border border-slate-100" x-text="getCurrentDate()"></span>
+                    <button @click="refreshData()" class="p-2.5 bg-slate-50 text-[#1e3a8a] hover:bg-blue-50 rounded-xl transition shadow-sm border border-slate-100" title="Refresh Data">
+                        <i class="ph-bold ph-arrows-clockwise text-lg" :class="isLoading && 'animate-spin'"></i>
+                    </button>
+                </div>
+            </header>
+
+            <main class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 relative bg-slate-50/50 flex flex-col">
+                <div x-show="isLoading" class="absolute inset-0 bg-white/70 flex flex-col items-center justify-center z-50 backdrop-blur-sm" style="display: none;">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-[#1e3a8a] mb-3"></div>
+                    <p class="text-[10px] text-slate-500 font-black uppercase tracking-[3px]">Sinkronisasi Firebase</p>
+                </div>
+
+                <div class="flex-1">
+                    <!-- Dashboard -->
+                    <div x-show="activeTab === 'dashboard'">
+                        <div class="bg-gradient-to-r from-[#1e3a8a] to-[#047857] rounded-3xl p-8 text-white shadow-xl mb-8 flex items-center justify-between relative overflow-hidden">
+                            <div class="relative z-10">
+                                <h3 class="text-2xl font-black mb-2">Halo, <span x-text="userName"></span>!</h3>
+                                <p class="text-blue-100 text-xs font-medium">Selamat datang di dashboard <span class="font-bold text-white">Sistem Akademik Terpadu</span> <span x-text="data.settings.namaInstitusi !== 'Sistem Akademik Terpadu' ? ' - ' + data.settings.namaInstitusi : ''"></span>.</p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
+                            <div @click="showInfoList('Daftar Materi', getMateriList())" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-lg transition-all border-b-4 border-b-blue-600 hover:-translate-y-1">
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Total Materi</span>
+                                <span class="text-3xl font-black text-slate-800" x-text="data.stats.totalMateri || 0"></span>
+                            </div>
+                            <div @click="showInfoList('Daftar Penugasan', getTugasPendingList())" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-lg transition-all border-b-4 border-b-emerald-500 hover:-translate-y-1">
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Tugas / Kuis</span>
+                                <span class="text-3xl font-black text-slate-800" x-text="data.tugas.length || 0"></span>
+                            </div>
+                            <div @click="showInfoList('Siswa Aktif', getSiswaAktifList())" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-lg transition-all border-b-4 border-b-[#1e3a8a] hover:-translate-y-1">
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Siswa Aktif</span>
+                                <span class="text-3xl font-black text-slate-800" x-text="data.stats.siswaAktif || 0"></span>
+                            </div>
+                            <div @click="showInfoList('Guru Aktif', getGuruAktifList())" class="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-lg transition-all border-b-4 border-b-[#047857] hover:-translate-y-1">
+                                <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Guru Aktif</span>
+                                <span class="text-3xl font-black text-slate-800" x-text="data.stats.guruAktif || 0"></span>
+                            </div>
+                        </div>
+                        <div class="mt-2 mb-8">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center mr-3"><i class="ph-fill ph-megaphone text-lg text-[#1e3a8a]"></i></div>
+                                    <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest">Informasi & Pengumuman</h3>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 gap-4">
+                                <template x-for="info in (data.informasi || []).filter(i => isKelasTargetMatch(i.kelasTarget) && (userRole !== 'guru' || (i.penulis && i.penulis.toLowerCase() === userName.toLowerCase())))" :key="info.id">
+                                    <div class="bg-white p-5 rounded-2xl shadow-sm border-l-4 border-[#1e3a8a] flex flex-col sm:flex-row sm:items-start hover:shadow-md transition-all relative overflow-hidden">
+                                        <div class="flex-1">
+                                            <div class="flex items-center mb-1 space-x-2">
+                                                <h4 class="text-base font-bold text-slate-800" x-text="info.judul"></h4>
+                                                <span x-show="info.kelasTarget && !info.kelasTarget.includes('Semua')" class="px-2 py-0.5 rounded text-[8px] font-black uppercase bg-slate-100 text-slate-600" x-text="'Kls ' + info.kelasTarget"></span>
+                                            </div>
+                                            <div class="text-xs text-slate-600 leading-relaxed mt-2" x-html="info.isi"></div>
+                                        </div>
+                                        <div class="mt-4 sm:mt-0 sm:ml-6 text-left sm:text-right shrink-0 border-t sm:border-t-0 border-slate-100 pt-3 sm:pt-0 z-10">
+                                            <span class="block text-[10px] font-bold text-slate-400 mb-1" x-text="info.tanggal"></span>
+                                            <div class="flex items-center sm:justify-end"><i class="ph-fill ph-user-circle text-[#10b981] mr-1 text-sm"></i><span class="text-[10px] font-bold text-[#10b981]" x-text="info.penulis"></span></div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="(data.informasi || []).filter(i => isKelasTargetMatch(i.kelasTarget) && (userRole !== 'guru' || (i.penulis && i.penulis.toLowerCase() === userName.toLowerCase()))).length === 0" class="p-8 text-center text-slate-400 bg-white rounded-2xl border border-slate-100 font-medium italic">Belum ada informasi.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Jadwal Pelajaran -->
+                    <div x-show="activeTab === 'jadwal'" style="display: none;">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-sm font-black text-slate-800 uppercase tracking-wider">Jadwal Agenda Mingguan</h3>
+                            <button x-show="['admin','guru'].includes(userRole)" @click="openJadwalModal()" class="bg-[#1e3a8a] hover:bg-[#1e40af] text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-blue-900/20 transition-colors">Tambah Jadwal</button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-5">
+                            <template x-for="h in ['Senin','Selasa','Rabu','Kamis','Jumat']" :key="h">
+                                <div class="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm min-h-[200px]">
+                                    <h4 class="text-[11px] font-black text-[#1e3a8a] uppercase mb-4 pb-3 border-b border-slate-100" x-text="h"></h4>
+                                    <div class="space-y-3">
+                                        <template x-for="j in (data.jadwal || []).filter(x => x.hari === h && isKelasTargetMatch(x.kelasTarget))" :key="j.id">
+                                            <div class="p-3.5 bg-slate-50/80 rounded-xl border border-slate-100 relative group transition hover:border-emerald-300 hover:bg-white hover:shadow-md">
+                                                <div class="flex items-center justify-between mb-1">
+                                                    <p class="text-[10px] font-black text-slate-400" x-text="j.jam"></p>
+                                                    <span class="bg-emerald-50 text-emerald-600 text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-widest truncate max-w-[60px]" x-show="j.kelasTarget && !j.kelasTarget.includes('Semua')" x-text="'Kls ' + j.kelasTarget"></span>
+                                                </div>
+                                                <p class="text-[12px] font-black text-slate-800 leading-tight mb-2" x-text="j.mapel"></p>
+                                                <div class="flex items-center text-[10px] text-slate-500 font-medium"><i class="ph-fill ph-map-pin mr-1 text-[#10b981] text-sm"></i><span x-text="j.ruang"></span></div>
+                                                <div x-show="isOwner(j)" class="absolute top-2 right-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex space-x-1">
+                                                    <button @click="openJadwalModal(j)" class="p-1.5 bg-white border border-slate-200 rounded-lg text-[#1e3a8a]"><i class="ph-bold ph-pencil-simple"></i></button>
+                                                    <button @click="confirmDelete('Jadwal', j.id, j.mapel)" class="p-1.5 bg-white border border-slate-200 rounded-lg text-red-500"><i class="ph-bold ph-trash"></i></button>
+                                                </div>
+                                            </div>
+                                        </template>
+                                        <p x-show="(data.jadwal || []).filter(x => x.hari === h && isKelasTargetMatch(x.kelasTarget)).length === 0" class="text-center text-slate-300 text-[10px] py-6 font-medium italic">Kosong</p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Guru Berkas -->
+                    <div x-show="activeTab === 'guru_berkas'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+                            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 flex-wrap gap-4">
+                                <div><h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Target Kelengkapan Perangkat Pembelajaran</h3></div>
+                                <button @click="openBerkasModal(null)" class="bg-[#1e3a8a] text-white px-4 py-2.5 rounded-xl text-[10px] font-bold"><i class="ph-bold ph-plus mr-1.5"></i> Tambah Mandiri</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Target (Mapel & Kelas)</th><th class="px-6 py-4 text-center">Modul Ajar</th><th class="px-6 py-4 text-center">Prosem</th><th class="px-6 py-4 text-center">Prota</th><th class="px-6 py-4 text-center">Aksi / Upload</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="t in getGuruBerkasTargets()" :key="t.mapel + t.kelas">
+                                            <tr class="hover:bg-slate-50/50">
+                                                <td class="px-6 py-4"><span class="font-black text-slate-800 block mb-1" x-text="t.mapel"></span><span class="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-blue-50 text-[#1e3a8a]" x-text="'Kelas: ' + t.kelas"></span></td>
+                                                <td class="px-6 py-4 text-center"><span class="px-3 py-1 rounded-full text-[10px] font-bold" :class="t.modulAjar ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'" x-text="t.modulAjar ? 'Sudah Upload' : 'Belum Ada'"></span></td>
+                                                <td class="px-6 py-4 text-center"><span class="px-3 py-1 rounded-full text-[10px] font-bold" :class="t.prosem ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'" x-text="t.prosem ? 'Sudah Upload' : 'Belum Ada'"></span></td>
+                                                <td class="px-6 py-4 text-center"><span class="px-3 py-1 rounded-full text-[10px] font-bold" :class="t.prota ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-500'" x-text="t.prota ? 'Sudah Upload' : 'Belum Ada'"></span></td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <div class="flex justify-center space-x-2">
+                                                        <button @click="openBerkasModal(t)" class="px-3 py-1.5 bg-slate-50 text-[#1e3a8a] border border-slate-200 rounded-lg text-[10px] font-black uppercase"><i class="ph-bold ph-pencil-simple mr-1"></i> Kelola</button>
+                                                        <button x-show="t.id" @click="confirmDelete('BerkasGuru', t.id, t.mapel)" class="p-1.5 bg-red-50 text-red-500 rounded-lg"><i class="ph-bold ph-trash"></i></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Materi -->
+                    <div x-show="activeTab === 'materi'" style="display: none;">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            <template x-for="materi in (data.materi || []).filter(m => isKelasTargetMatch(m.kelasTarget))" :key="materi.id">
+                                <div @click="openDetailMateri(materi)" class="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl transition-all group flex flex-col cursor-pointer hover:border-[#1e3a8a]">
+                                    <div class="h-40 overflow-hidden relative shrink-0">
+                                        <img :src="materi.cover || 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&q=80'" class="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500">
+                                        <span class="absolute top-4 left-4 bg-white/90 backdrop-blur text-[#1e3a8a] text-[10px] font-black px-3 py-1 rounded-full shadow-sm uppercase tracking-wider" x-text="materi.mapel"></span>
+                                    </div>
+                                    <div class="p-5 flex flex-col flex-1">
+                                        <h4 class="text-sm font-bold text-slate-800 mb-2 line-clamp-2 leading-snug group-hover:text-[#10b981] transition-colors" x-text="materi.judul"></h4>
+                                        <p class="text-xs text-slate-500 mb-4 line-clamp-2 leading-relaxed" x-text="materi.deskripsi"></p>
+                                        <div class="flex items-center justify-between border-t border-slate-100 pt-4 mt-auto">
+                                            <div class="flex items-center">
+                                                <div class="bg-blue-50 text-[#1e3a8a] rounded-full w-8 h-8 flex items-center justify-center font-black text-[10px]" x-text="(materi.guru||'U').charAt(0)"></div>
+                                                <span class="ml-2 text-xs font-bold text-slate-600" x-text="materi.guru"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div x-show="!(data.materi || []).filter(m => isKelasTargetMatch(m.kelasTarget)).length" class="col-span-full py-20 text-center text-slate-400 font-medium italic">Belum ada materi untuk kelas Anda.</div>
+                        </div>
+                    </div>
+
+                    <!-- Tugas -->
+                    <div x-show="activeTab === 'tugas'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+                            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                <h3 class="text-xs font-black text-slate-800 uppercase tracking-widest">Daftar Tugas & Evaluasi Saya</h3>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Mata Pelajaran</th><th class="px-6 py-4">Judul Tugas</th><th class="px-6 py-4">Batas Waktu</th><th class="px-6 py-4 text-center">File Terkirim</th><th class="px-6 py-4 text-center">Nilai Saya</th><th class="px-6 py-4 text-center">Aksi / Tautan</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="t in (data.tugas || []).filter(t => isKelasTargetMatch(t.kelasTarget))" :key="t.id">
+                                            <tr class="hover:bg-slate-50/50 transition-all">
+                                                <td class="px-6 py-4 font-bold text-slate-600" x-text="t.mapel"></td>
+                                                <td class="px-6 py-4 font-black text-slate-800" x-text="t.judul"></td>
+                                                <td class="px-6 py-4 font-bold text-red-500" x-text="t.deadline"></td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <template x-if="getStudentSubmission(t)"><button @click="openFileLink(getStudentSubmission(t).url, getStudentSubmission(t).name)" class="px-3 py-1.5 bg-emerald-50 text-[#10b981] rounded-lg text-[10px] font-bold hover:bg-[#10b981] hover:text-white"><i class="ph-bold ph-check-circle mr-1"></i> Lihat File</button></template>
+                                                    <template x-if="!getStudentSubmission(t)"><span class="text-[10px] font-bold text-slate-400 italic">Belum Ada File</span></template>
+                                                </td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <span x-show="getStudentScore(t) !== null" class="px-3 py-1 rounded-full text-[11px] font-black bg-blue-50 text-[#1e3a8a]" x-text="getStudentScore(t)"></span>
+                                                    <span x-show="getStudentScore(t) === null" class="text-[10px] font-bold text-amber-500 italic">Belum Dinilai</span>
+                                                </td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <div class="flex flex-col space-y-1.5 items-center justify-center">
+                                                        <template x-if="getStudentScore(t) === null || Number(getStudentScore(t)) < Number(t.kkm || 75)">
+                                                            <button @click="openFileLink(t.link, t.judul)" class="w-24 py-2 flex items-center justify-center bg-blue-50 text-[#1e3a8a] font-bold rounded-lg text-[10px] hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-link mr-1"></i> Buka Soal</button>
+                                                        </template>
+                                                        <template x-if="getStudentScore(t) === null || Number(getStudentScore(t)) < Number(t.kkm || 75)">
+                                                            <div>
+                                                                <template x-if="!isDeadlinePassed(t.deadline)"><button @click="openUploadTugasModal(t)" class="w-24 py-2 flex items-center justify-center bg-emerald-50 text-[#10b981] font-bold rounded-lg text-[10px] hover:bg-[#10b981] hover:text-white"><i class="ph-bold ph-upload-simple mr-1"></i> Upload</button></template>
+                                                                <template x-if="isDeadlinePassed(t.deadline)"><span class="w-24 py-2 flex items-center justify-center bg-slate-100 text-slate-400 font-bold rounded-lg text-[10px]"><i class="ph-bold ph-clock mr-1"></i> Habis</span></template>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                                <div x-show="!(data.tugas || []).filter(t => isKelasTargetMatch(t.kelasTarget)).length" class="p-10 text-center text-slate-400 italic">Tidak ada tugas.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Kelola Informasi -->
+                    <div x-show="activeTab === 'admin_informasi'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest">Papan Informasi & Pengumuman</h3>
+                                <button @click="openInformasiModal()" class="bg-[#1e3a8a] text-white px-5 py-2.5 rounded-xl text-xs font-bold">Buat Pengumuman</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Tanggal</th><th class="px-6 py-4">Judul Pengumuman</th><th class="px-6 py-4 text-center">Kelas Target</th><th class="px-6 py-4 text-center">Penulis</th><th class="px-6 py-4 text-center">Aksi</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="(info, index) in data.adminInformasi || []" :key="info.id">
+                                            <tr class="hover:bg-blue-50/20">
+                                                <td class="px-6 py-4 font-bold text-slate-500" x-text="info.tanggal"></td>
+                                                <td class="px-6 py-4 font-black text-slate-800"><div class="truncate w-48 lg:w-64" x-text="info.judul"></div></td>
+                                                <td class="px-6 py-4 text-center"><span class="px-3 py-1 rounded-md text-[9px] font-black uppercase bg-slate-100 text-slate-600" x-text="(info.kelasTarget && !info.kelasTarget.includes('Semua')) ? 'Kls ' + info.kelasTarget : 'Semua Kelas'"></span></td>
+                                                <td class="px-6 py-4 text-center font-bold text-[#10b981]" x-text="info.penulis"></td>
+                                                <td class="px-6 py-4 text-center flex justify-center space-x-1">
+                                                    <div class="flex flex-col mr-1">
+                                                        <button @click="moveInfoUp(index)" :disabled="index === 0" class="p-1 text-slate-400 disabled:opacity-30"><i class="ph-bold ph-caret-up text-sm"></i></button>
+                                                        <button @click="moveInfoDown(index)" :disabled="index === (data.adminInformasi.length - 1)" class="p-1 text-slate-400 disabled:opacity-30"><i class="ph-bold ph-caret-down text-sm"></i></button>
+                                                    </div>
+                                                    <button @click="openInformasiModal(info)" class="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-pencil-simple text-base"></i></button>
+                                                    <button @click="confirmDelete('Informasi', info.id, info.judul)" class="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-red-600 hover:text-white"><i class="ph-bold ph-trash text-base"></i></button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Kelola Kelas -->
+                    <div x-show="activeTab === 'admin_kelas'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest">Database Kelas</h3>
+                                <button @click="openKelasModal()" class="bg-[#1e3a8a] text-white px-5 py-2.5 rounded-xl text-xs font-bold">Buat Kelas Baru</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Nama Kelas</th><th class="px-6 py-4">Wali Kelas</th><th class="px-6 py-4 text-center">Jumlah Siswa</th><th class="px-6 py-4 text-center">Aksi Manajemen</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="k in data.adminKelas || []" :key="k.id">
+                                            <tr class="hover:bg-blue-50/30">
+                                                <td class="px-6 py-5 font-black text-slate-800 text-sm" x-text="k.namaKelas"></td>
+                                                <td class="px-6 py-5 font-bold text-slate-500" x-text="k.waliKelas"></td>
+                                                <td class="px-6 py-5 text-center"><span class="px-4 py-1.5 bg-blue-50 text-blue-600 rounded-full font-black text-[11px]" x-text="getJumlahSiswaKelas(k.namaKelas)"></span></td>
+                                                <td class="px-6 py-5 flex justify-center space-x-3">
+                                                    <button @click="uploadForm.kelas = k.namaKelas; showUploadModal = true" class="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white" title="Impor Siswa Excel"><i class="ph-bold ph-file-xls text-lg"></i></button>
+                                                    <button @click="openKelasModal(k)" class="p-2.5 bg-slate-50 text-slate-500 rounded-xl hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-pencil-simple text-lg"></i></button>
+                                                    <button @click="confirmDelete('Kelas', k.id, k.namaKelas)" class="p-2.5 bg-slate-50 text-slate-500 rounded-xl hover:bg-red-600 hover:text-white"><i class="ph-bold ph-trash text-lg"></i></button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Data Pengguna -->
+                    <div x-show="activeTab === 'admin_users'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                                <div class="flex items-center space-x-3">
+                                    <h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest shrink-0">Database Pengguna</h3>
+                                    <select x-model="userFilterRole" class="px-3 py-1.5 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-white">
+                                        <option value="Semua">Semua Role</option>
+                                        <option value="Siswa">Siswa</option>
+                                        <option value="Guru">Guru</option>
+                                        <option value="Admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                                    <button @click="exportUsersExcel()" class="bg-amber-50 text-amber-700 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-amber-100"><i class="ph-bold ph-file-xls mr-1.5 text-sm"></i> Export Excel</button>
+                                    <button @click="downloadUserTemplate()" class="bg-emerald-50 text-emerald-600 px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-100"><i class="ph-bold ph-download-simple mr-1.5 text-sm"></i> Template</button>
+                                    <button @click="showUploadUserModal = true" class="bg-blue-50 text-[#1e3a8a] px-4 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-100"><i class="ph-bold ph-upload-simple mr-1.5 text-sm"></i> Upload Excel</button>
+                                    <button @click="openUserModal()" class="bg-[#1e3a8a] text-white px-5 py-2.5 rounded-xl text-xs font-bold">Tambah Akun</button>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Informasi Akun</th><th class="px-6 py-4">Role Akses</th><th class="px-6 py-4 text-center">Status</th><th class="px-6 py-4 text-center">Aksi Manajemen</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="u in (data.adminUsers || []).filter(x => userFilterRole === 'Semua' || (x.role || '').toLowerCase() === userFilterRole.toLowerCase())" :key="u.id">
+                                            <tr class="hover:bg-slate-50">
+                                                <td class="px-6 py-4 flex items-center">
+                                                    <div class="w-10 h-10 rounded-full bg-emerald-50 text-[#10b981] flex items-center justify-center font-black text-sm mr-4 shrink-0" x-text="(u.nama||'U').charAt(0)"></div>
+                                                    <div><div class="font-black text-slate-800 text-sm" x-text="u.nama"></div><div class="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-wider" x-text="'@' + u.username + ' | ' + u.info"></div></div>
+                                                </td>
+                                                <td class="px-6 py-4"><span class="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-600" x-text="u.role"></span></td>
+                                                <td class="px-6 py-4 text-center"><span class="px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest" :class="u.status === 'Aktif' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'" x-text="u.status"></span></td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <div class="flex justify-center space-x-2">
+                                                        <button @click="openUserModal(u)" class="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-pencil-simple text-base"></i></button>
+                                                        <button @click="confirmDelete('Pengguna', u.id, u.nama)" class="p-2 bg-slate-50 text-slate-500 rounded-xl hover:bg-red-600 hover:text-white"><i class="ph-bold ph-trash text-base"></i></button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Kelola Materi -->
+                    <div x-show="activeTab === 'admin_materi'" style="display: none;">
+                        <div class="flex justify-between items-center mb-8">
+                            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest">Bank Materi & Modul</h3>
+                            <button @click="openMateriModal()" class="bg-[#1e3a8a] text-white px-5 py-2.5 rounded-xl text-xs font-bold"><i class="ph-bold ph-plus mr-2 text-base"></i> Tambah Materi</button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                            <template x-for="materi in data.adminMateri || []" :key="materi.id">
+                                <div @click="openDetailMateri(materi)" class="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-200 group flex flex-col p-5 hover:shadow-xl hover:-translate-y-1 cursor-pointer">
+                                    <div class="flex justify-between items-start mb-4">
+                                        <div class="flex flex-wrap gap-1"><span class="bg-blue-50 text-[#1e3a8a] text-[9px] font-black px-3 py-1.5 rounded-full uppercase tracking-widest" x-text="materi.mapel"></span></div>
+                                        <div class="flex space-x-1 opacity-100 md:opacity-0 group-hover:opacity-100">
+                                            <button @click.stop="openMateriModal(materi)" class="p-1.5 text-slate-400 hover:bg-blue-50 hover:text-[#1e3a8a] rounded-lg"><i class="ph-bold ph-pencil-simple"></i></button>
+                                            <button @click.stop="confirmDelete('Materi', materi.id, materi.judul)" class="p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 rounded-lg"><i class="ph-bold ph-trash"></i></button>
+                                        </div>
+                                    </div>
+                                    <h4 class="text-base font-black text-slate-800 mb-2 leading-snug group-hover:text-[#10b981]" x-text="materi.judul"></h4>
+                                    <p class="text-xs text-slate-500 mb-4 line-clamp-3 leading-relaxed" x-text="materi.deskripsi"></p>
+                                    <div class="mt-auto pt-4 border-t border-slate-50 flex items-center"><i class="ph-fill ph-chalkboard-teacher text-slate-400 text-xl mr-2"></i><span class="text-[10px] font-bold text-slate-500 uppercase" x-text="materi.guru"></span></div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Admin Kelola Nilai -->
+                    <div x-show="activeTab === 'admin_nilai'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
+                                <h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest">Penilaian Evaluasi Siswa</h3>
+                                <button @click="openTugasModal()" class="bg-[#1e3a8a] text-white px-5 py-2.5 rounded-xl text-xs font-bold">Buat Tugas Baru</button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Kelas Target</th><th class="px-6 py-4">Judul Penugasan</th><th class="px-6 py-4">Batas Waktu</th><th class="px-6 py-4 text-center">Rekap Nilai Siswa</th><th class="px-6 py-4 text-center">Aksi Tugas</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="sub in data.adminTugas || []" :key="sub.id">
+                                            <tr class="hover:bg-blue-50/20">
+                                                <td class="px-6 py-4 font-bold text-slate-500"><span class="px-3 py-1 rounded-md text-[9px] font-black uppercase bg-slate-100 text-slate-600" x-text="(sub.kelasTarget && !sub.kelasTarget.includes('Semua')) ? 'Kls ' + sub.kelasTarget : 'Semua Kelas'"></span></td>
+                                                <td class="px-6 py-4 font-black text-slate-800" x-text="sub.judul"></td>
+                                                <td class="px-6 py-4 font-bold text-red-500" x-text="sub.deadline"></td>
+                                                <td class="px-6 py-4 text-center"><button @click="openKelolaNilai(sub)" class="bg-blue-50 text-[#1e3a8a] hover:bg-[#1e3a8a] hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase flex items-center justify-center mx-auto"><i class="ph-bold ph-list-numbers mr-1.5 text-sm"></i> Input Nilai</button></td>
+                                                <td class="px-6 py-4 text-center flex justify-center space-x-2">
+                                                    <button @click="openTugasModal(sub)" class="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-pencil-simple text-base"></i></button>
+                                                    <button @click="confirmDelete('Tugas', sub.id, sub.judul)" class="p-2 bg-slate-50 text-slate-500 rounded-lg hover:bg-red-600 hover:text-white"><i class="ph-bold ph-trash text-base"></i></button>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Monitoring Berkas -->
+                    <div x-show="activeTab === 'admin_berkas'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div class="p-6 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center flex-wrap gap-4">
+                                <div><h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest">Pantau Perangkat Mengajar Guru</h3></div>
+                                <div class="flex items-center space-x-3">
+                                    <label class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Filter Mapel:</label>
+                                    <select x-model="adminFilterMapelBerkas" class="px-4 py-2 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-white focus:ring-2 focus:ring-[#1e3a8a]/20">
+                                        <option value="Semua">Semua</option>
+                                        <template x-for="m in getUniqueMapelForFilter()" :key="m"><option :value="m" x-text="m"></option></template>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100">
+                                        <tr><th class="px-6 py-4">Guru Pengampu</th><th class="px-6 py-4">Mata Pelajaran & Kelas</th><th class="px-6 py-4 text-center">Modul Ajar</th><th class="px-6 py-4 text-center">Prosem</th><th class="px-6 py-4 text-center">Prota</th></tr>
+                                    </thead>
+                                    <tbody class="text-xs divide-y divide-slate-50">
+                                        <template x-for="r in getAdminMonitoringBerkas()" :key="r.guru + r.mapel + r.kelas">
+                                            <tr class="hover:bg-blue-50/20 group">
+                                                <td class="px-6 py-4"><div class="flex items-center"><div class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-black text-xs mr-3 shrink-0" x-text="r.guru.charAt(0)"></div><div><div class="font-black text-slate-800" x-text="r.guru"></div><div class="text-[9px] text-slate-400" x-text="r.waktuUpdate ? 'Update: ' + r.waktuUpdate : 'Belum diupdate'"></div></div></div></td>
+                                                <td class="px-6 py-4"><span class="font-bold text-slate-700 block mb-1" x-text="r.mapel"></span><span class="px-2 py-0.5 rounded text-[9px] font-black uppercase bg-slate-100 text-slate-600" x-text="'KLS ' + r.kelas"></span></td>
+                                                <td class="px-6 py-4 text-center"><template x-if="r.modulAjar"><button @click="openFileLink(r.modulAjar, 'Modul_Ajar')" class="px-3 py-1 bg-emerald-50 text-[#10b981] rounded-lg text-[10px] font-bold hover:bg-[#10b981] hover:text-white"><i class="ph-bold ph-check-circle mr-1"></i> Tersedia</button></template><template x-if="!r.modulAjar"><span class="px-3 py-1 bg-red-50 text-red-500 rounded-lg text-[10px] font-bold"><i class="ph-bold ph-x-circle mr-1"></i> Belum</span></template></td>
+                                                <td class="px-6 py-4 text-center"><template x-if="r.prosem"><button @click="openFileLink(r.prosem, 'Prosem')" class="px-3 py-1 bg-emerald-50 text-[#10b981] rounded-lg text-[10px] font-bold hover:bg-[#10b981] hover:text-white"><i class="ph-bold ph-check-circle mr-1"></i> Tersedia</button></template><template x-if="!r.prosem"><span class="px-3 py-1 bg-red-50 text-red-500 rounded-lg text-[10px] font-bold"><i class="ph-bold ph-x-circle mr-1"></i> Belum</span></template></td>
+                                                <td class="px-6 py-4 text-center">
+                                                    <div class="flex items-center justify-center">
+                                                        <template x-if="r.prota"><button @click="openFileLink(r.prota, 'Prota')" class="px-3 py-1 bg-emerald-50 text-[#10b981] rounded-lg text-[10px] font-bold hover:bg-[#10b981] hover:text-white"><i class="ph-bold ph-check-circle mr-1"></i> Tersedia</button></template><template x-if="!r.prota"><span class="px-3 py-1 bg-red-50 text-red-500 rounded-lg text-[10px] font-bold"><i class="ph-bold ph-x-circle mr-1"></i> Belum</span></template>
+                                                        <template x-if="r.id"><button @click="confirmDelete('BerkasGuru', r.id, r.guru + ' - ' + r.mapel)" class="ml-2 p-1.5 bg-red-50 text-red-500 rounded-lg opacity-100 md:opacity-0 group-hover:opacity-100"><i class="ph-bold ph-trash"></i></button></template>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Admin Settings (Vercel + Firebase Edition) -->
+                    <div x-show="activeTab === 'admin_settings'" style="display: none;">
+                        <div class="bg-white rounded-3xl shadow-sm border border-slate-200 p-6 md:p-10 max-w-2xl mx-auto mt-4">
+                            <div class="flex items-center justify-between mb-6 pb-5 border-b border-slate-100 flex-wrap gap-3">
+                                <div class="flex items-center">
+                                    <div class="w-12 h-12 bg-blue-50 text-[#1e3a8a] rounded-full flex items-center justify-center mr-4 shrink-0"><i class="ph-fill ph-gear-six text-2xl"></i></div>
+                                    <div>
+                                        <h3 class="text-base font-black text-slate-800 uppercase tracking-widest">Sistem Konfigurasi Global</h3>
+                                        <p class="text-[10px] font-bold text-[#10b981] uppercase mt-0.5">Mode: Vercel + Firebase (Full Cloud)</p>
+                                    </div>
+                                </div>
+                                <button type="button" @click="backupDatabaseJSON()" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider flex items-center">
+                                    <i class="ph-bold ph-download-simple mr-1.5 text-sm"></i> Backup JSON
+                                </button>
+                            </div>
+
+                            <form @submit.prevent="saveSettings()" class="space-y-6">
+                                <div class="p-5 bg-slate-50 rounded-2xl border border-slate-200">
+                                    <h4 class="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-4">Logo Institusi</h4>
+                                    <div class="flex items-center space-x-6">
+                                        <div class="shrink-0 w-24 h-24 bg-white border-2 border-dashed border-slate-300 rounded-xl flex items-center justify-center overflow-hidden relative p-2 shadow-inner">
+                                            <template x-if="data.settings.logoUrl"><img :src="data.settings.logoUrl" class="w-full h-full object-contain rounded-lg"></template>
+                                            <template x-if="!data.settings.logoUrl"><i class="ph-fill ph-image text-3xl text-slate-300"></i></template>
+                                            <div class="absolute inset-0 bg-slate-900/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity cursor-pointer rounded-xl">
+                                                <i class="ph-bold ph-upload-simple text-white text-xl"></i><input type="file" accept="image/png, image/jpeg, image/jpg" @change="handleLogoUpload" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+                                            </div>
+                                        </div>
+                                        <div class="flex-1">
+                                            <label class="flex items-center space-x-2 cursor-pointer mb-2">
+                                                <input type="checkbox" x-model="data.settings.showLogo" class="w-4 h-4 rounded text-[#1e3a8a] focus:ring-[#1e3a8a] border-slate-300">
+                                                <span class="text-xs font-bold text-slate-700">Tampilkan Logo di Halaman Login & Sidebar</span>
+                                            </label>
+                                            <button type="button" @click="data.settings.logoUrl = ''; data.settings.showLogo = false" x-show="data.settings.logoUrl" class="text-[10px] font-bold text-red-500 uppercase tracking-widest bg-red-50 px-3 py-1 rounded-lg">Hapus Logo</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Nama Institusi</label><input type="text" x-model="data.settings.namaInstitusi" required class="w-full px-5 py-3.5 text-sm border border-slate-200 rounded-2xl outline-none bg-slate-50 font-bold"></div>
+                                <div class="grid grid-cols-2 gap-6">
+                                    <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Tahun Ajaran</label><input type="text" x-model="data.settings.tahunAjaran" required class="w-full px-5 py-3.5 text-sm border border-slate-200 rounded-2xl outline-none bg-slate-50 font-bold"></div>
+                                    <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Semester</label><select x-model="data.settings.semester" class="w-full px-5 py-3.5 text-sm border border-slate-200 rounded-2xl outline-none bg-slate-50 font-bold"><option value="Ganjil">Ganjil</option><option value="Genap">Genap</option></select></div>
+                                </div>
+                                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Tautan Web Kimia</label><input type="url" x-model="data.settings.linkWebKimia" required class="w-full px-5 py-3.5 text-sm border border-slate-200 rounded-2xl outline-none bg-slate-50 font-bold"></div>
+
+                                <!-- Konfigurasi Penyimpanan File Besar (Cloudinary) -->
+                                <div class="p-5 bg-emerald-50/70 rounded-2xl border border-emerald-200">
+                                    <h4 class="text-[11px] font-black text-emerald-800 uppercase tracking-widest mb-1">Penyimpanan File Besar (Cloudinary - Opsional)</h4>
+                                    <p class="text-[10px] text-emerald-700 font-medium mb-4 leading-relaxed">Jika dikosongkan, upload file otomatis tersimpan di Firebase (maks. 2MB/file). Isi konfigurasi Cloudinary gratis di bawah untuk mendukung upload tugas & materi hingga 25MB.</p>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div><label class="block text-[9px] font-black text-emerald-700 mb-1 uppercase">Cloud Name</label><input type="text" x-model="data.settings.cloudinaryCloudName" placeholder="contoh: dxyz12345" class="w-full px-4 py-2.5 text-xs border border-emerald-200 rounded-xl outline-none bg-white font-bold"></div>
+                                        <div><label class="block text-[9px] font-black text-emerald-700 mb-1 uppercase">Unsigned Upload Preset</label><input type="text" x-model="data.settings.cloudinaryUploadPreset" placeholder="contoh: lms_unsigned" class="w-full px-4 py-2.5 text-xs border border-emerald-200 rounded-xl outline-none bg-white font-bold"></div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 flex justify-end"><button type="submit" class="bg-[#1e3a8a] hover:bg-[#1e40af] text-white font-black py-3.5 px-8 rounded-2xl text-xs uppercase tracking-widest shadow-lg">Simpan Konfigurasi</button></div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Chat Realtime SSE -->
+                    <div x-show="activeTab === 'chat'" style="display: none;" class="h-full flex flex-col md:flex-row gap-5">
+                        <div :class="activeChatUser ? 'hidden md:flex' : 'flex'" class="w-full md:w-1/3 lg:w-1/4 bg-white rounded-3xl shadow-sm border border-slate-200 flex-col overflow-hidden h-[calc(100vh-120px)] md:h-[calc(100vh-140px)] shrink-0">
+                            <div class="p-5 border-b border-slate-100 bg-slate-50/50">
+                                <div class="flex items-center justify-between mb-3"><h3 class="text-[12px] font-black text-slate-800 uppercase tracking-widest">Pesan Realtime</h3><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span></div>
+                                <div class="relative"><i class="ph-bold ph-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400"></i><input type="text" x-model="chatSearch" placeholder="Cari pengguna..." class="w-full pl-9 pr-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none bg-white"></div>
+                            </div>
+                            <div class="flex-1 overflow-y-auto custom-scrollbar divide-y divide-slate-50">
+                                <template x-for="u in getChatUsers()" :key="u.id">
+                                    <div @click="openChat(u)" class="p-4 flex items-center cursor-pointer hover:bg-blue-50/50" :class="activeChatUser?.id === u.id ? 'bg-blue-50/80 border-l-4 border-[#1e3a8a]' : 'border-l-4 border-transparent'">
+                                        <div class="relative"><div class="w-10 h-10 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center justify-center font-black text-sm uppercase shrink-0" x-text="u.nama.charAt(0)"></div><span x-show="u.unread > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-black w-4 h-4 flex items-center justify-center rounded-full shadow-sm" x-text="u.unread"></span></div>
+                                        <div class="ml-3 flex-1 overflow-hidden">
+                                            <div class="flex justify-between items-center mb-0.5"><h4 class="text-xs font-bold text-slate-800 truncate" x-text="u.nama"></h4><span class="text-[9px] font-bold text-slate-400" x-text="u.lastMsg ? new Date(u.lastMsg.waktu).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'}) : ''"></span></div>
+                                            <p class="text-[10px] text-slate-500 truncate font-medium" :class="u.unread > 0 ? 'text-[#1e3a8a] font-bold' : ''" x-text="u.lastMsg ? (parseChatMessage(u.lastMsg.pesan).isFile ? '📎 Mengirim lampiran' : u.lastMsg.pesan) : 'Belum ada percakapan'"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <div :class="activeChatUser ? 'flex' : 'hidden md:flex'" class="flex-1 bg-white rounded-3xl shadow-sm border border-slate-200 flex-col overflow-hidden h-[calc(100vh-120px)] md:h-[calc(100vh-140px)]">
+                            <template x-if="!activeChatUser">
+                                <div class="flex-1 flex flex-col items-center justify-center text-center p-8 bg-slate-50/30">
+                                    <div class="w-20 h-20 bg-blue-50 text-[#1e3a8a] rounded-full flex items-center justify-center mb-4"><i class="ph-fill ph-chats-teardrop text-4xl"></i></div>
+                                    <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-1">Pusat Pesan Terpadu</h3>
+                                    <p class="text-xs text-slate-500 font-medium">Pilih salah satu kontak di samping untuk memulai percakapan realtime.</p>
+                                </div>
+                            </template>
+                            <template x-if="activeChatUser">
+                                <div class="flex flex-col h-full">
+                                    <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
+                                        <div class="flex items-center">
+                                            <button type="button" @click="closeChat()" class="mr-3 p-2 bg-white hover:bg-slate-100 text-slate-500 hover:text-[#1e3a8a] border border-slate-200 rounded-xl flex items-center transition-colors" title="Kembali ke daftar kontak">
+                                                <i class="ph-bold ph-arrow-left text-base"></i>
+                                            </button>
+                                            <div class="w-10 h-10 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-black text-sm uppercase shrink-0" x-text="activeChatUser.nama.charAt(0)"></div>
+                                            <div class="ml-3"><h3 class="text-xs font-black text-slate-800 uppercase tracking-wide" x-text="activeChatUser.nama"></h3><p class="text-[10px] font-bold text-[#10b981] uppercase tracking-widest" x-text="activeChatUser.role + ' - ' + activeChatUser.info"></p></div>
+                                        </div>
+                                        <button type="button" @click="clearChatHistoryUI()" class="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-xl flex items-center text-[10px] font-black uppercase transition-colors"><i class="ph-bold ph-trash mr-1.5 text-base"></i> Clear History</button>
+                                    </div>
+
+                                    <div id="chatContainer" class="flex-1 overflow-y-auto p-5 space-y-4 bg-slate-50/30 custom-scrollbar">
+                                        <template x-for="p in (data.pesan || []).filter(msg => (String(msg.pengirimId) === String(getMyId()) && String(msg.penerimaId) === String(activeChatUser.id)) || (String(msg.pengirimId) === String(activeChatUser.id) && String(msg.penerimaId) === String(getMyId()))).sort((a,b) => new Date(a.waktu) - new Date(b.waktu))" :key="p.id">
+                                            <div class="flex w-full group" :class="String(p.pengirimId) === String(getMyId()) ? 'justify-end' : 'justify-start'">
+                                                <div class="max-w-[75%] relative flex flex-col" :class="String(p.pengirimId) === String(getMyId()) ? 'items-end' : 'items-start'">
+                                                    <div class="absolute top-1/2 -translate-y-1/2 flex space-x-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity z-10" :class="String(p.pengirimId) === String(getMyId()) ? '-left-8' : '-right-8'">
+                                                        <button @click="confirmDelete('Pesan', p.id, parseChatMessage(p.pesan).isFile ? 'File: ' + parseChatMessage(p.pesan).name : p.pesan)" class="p-1.5 bg-white text-red-500 hover:bg-red-50 rounded-full shadow-sm border border-slate-100"><i class="ph-bold ph-trash text-xs"></i></button>
+                                                    </div>
+                                                    <div class="px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed break-words shadow-sm min-w-[60px]" :class="String(p.pengirimId) === String(getMyId()) ? 'bg-[#1e3a8a] text-white rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-200 rounded-tl-sm'">
+                                                        <template x-if="!parseChatMessage(p.pesan).isFile"><span x-text="p.pesan"></span></template>
+                                                        <template x-if="parseChatMessage(p.pesan).isFile">
+                                                            <div class="flex flex-col space-y-2">
+                                                                <template x-if="parseChatMessage(p.pesan).mime.startsWith('image/') && parseChatMessage(p.pesan).url.startsWith('http')">
+                                                                    <a :href="parseChatMessage(p.pesan).url" target="_blank" class="block max-w-full md:max-w-xs overflow-hidden rounded-lg border border-white/20"><img :src="parseChatMessage(p.pesan).url" class="w-full h-auto object-cover bg-white" alt="Image"></a>
+                                                                </template>
+                                                                <button type="button" @click="openFileLink(parseChatMessage(p.pesan).url, parseChatMessage(p.pesan).name)" class="flex items-center space-x-2 hover:opacity-80 transition-opacity rounded-lg p-2 text-left" :class="String(p.pengirimId) === String(getMyId()) ? 'bg-black/10' : 'bg-slate-100'" :title="parseChatMessage(p.pesan).name">
+                                                                    <div class="w-8 h-8 rounded-full flex items-center justify-center shrink-0" :class="String(p.pengirimId) === String(getMyId()) ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600'"><i class="ph-bold text-lg" :class="parseChatMessage(p.pesan).mime.startsWith('image/') ? 'ph-image' : 'ph-file'"></i></div>
+                                                                    <div class="overflow-hidden"><p class="truncate font-bold text-[10px]" x-text="parseChatMessage(p.pesan).name"></p><p class="text-[8px] uppercase tracking-wider opacity-75" x-text="parseChatMessage(p.pesan).mime.startsWith('image/') ? 'Buka Gambar' : 'Unduh Dokumen'"></p></div>
+                                                                </button>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                    <div class="flex items-center mt-1 space-x-1 px-1">
+                                                        <span class="text-[9px] font-bold text-slate-400" x-text="new Date(p.waktu).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})"></span>
+                                                        <template x-if="String(p.pengirimId) === String(getMyId())"><i class="text-[10px]" :class="p.isRead === 'true' ? 'ph-bold ph-checks text-blue-500' : 'ph-bold ph-check text-slate-400'"></i></template>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <div class="p-4 border-t border-slate-100 bg-white shrink-0 flex items-end space-x-3">
+                                        <div class="relative shrink-0">
+                                            <button type="button" :disabled="chatUpload.isUploading" class="w-11 h-11 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-[#1e3a8a] rounded-xl flex items-center justify-center border border-slate-200 relative overflow-hidden">
+                                                <i x-show="!chatUpload.isUploading" class="ph-bold ph-paperclip text-lg"></i><div x-show="chatUpload.isUploading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-[#1e3a8a]"></div><input type="file" @change="handleChatFileUpload($event)" :disabled="chatUpload.isUploading" class="absolute inset-0 opacity-0 cursor-pointer" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.zip">
+                                            </button>
+                                        </div>
+                                        <textarea x-model="chatMessage" @keydown.enter.prevent="sendMessage()" rows="1" placeholder="Tulis pesan... (Enter untuk kirim)" class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs outline-none focus:ring-2 focus:ring-[#1e3a8a]/20 resize-none custom-scrollbar max-h-24"></textarea>
+                                        <button @click="sendMessage()" :disabled="!chatMessage.trim()" class="bg-[#1e3a8a] hover:bg-[#1e40af] text-white w-11 h-11 rounded-xl flex items-center justify-center disabled:opacity-50 shrink-0 shadow-sm"><i class="ph-fill ph-paper-plane-right text-lg"></i></button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <!-- MODALS UI -->
+    <div x-show="showDeleteConfirmModal" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xs text-center border border-slate-100">
+            <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-red-100"><i class="ph-bold ph-trash text-3xl"></i></div>
+            <h3 class="text-sm font-black text-slate-800 mb-2 uppercase tracking-widest">Hapus Data?</h3><p class="text-[11px] text-slate-500 mb-3 font-medium">Anda yakin ingin menghapus data ini secara permanen?</p><p class="text-[11px] font-bold text-red-500 mb-8 truncate px-2 p-2 bg-red-50 rounded-lg" x-text="itemToDelete.title"></p>
+            <div class="flex space-x-3"><button @click="showDeleteConfirmModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-slate-100">Batal</button><button @click="executeDelete()" class="flex-1 py-3 bg-[#e11d48] text-white rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-[#be123c]">Hapus</button></div>
+        </div>
+    </div>
+
+    <div x-show="showNilaiModal" class="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-6 md:p-8 w-full max-w-xl m-4 border border-slate-100 flex flex-col max-h-[85vh]">
+            <div class="flex justify-between items-start mb-6 border-b border-slate-100 pb-4">
+                <div><h3 class="text-[13px] font-black text-slate-800 uppercase tracking-widest" x-text="'Input Nilai: ' + (activeTaskForGrading ? activeTaskForGrading.judul : '')"></h3><p class="text-[10px] font-bold text-[#10b981] uppercase mt-1 tracking-widest" x-text="(activeTaskForGrading && !activeTaskForGrading.kelasTarget.includes('Semua')) ? 'Target: Kelas ' + activeTaskForGrading.kelasTarget : 'Target: Semua Siswa'"></p></div>
+                <div class="flex items-center space-x-2">
+                    <button @click="exportNilaiExcel()" class="px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-100"><i class="ph-bold ph-file-xls mr-1"></i> Excel</button>
+                    <button @click="showNilaiModal = false" class="text-slate-400 hover:text-red-500"><i class="ph-bold ph-x text-xl"></i></button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-6">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-wider sticky top-0 shadow-sm z-10"><tr><th class="p-4 rounded-tl-xl">Nama Siswa (Kelas)</th><th class="p-4 text-center">File Jawaban</th><th class="p-4 text-center rounded-tr-xl w-32">Skor Nilai</th></tr></thead>
+                    <tbody class="divide-y divide-slate-50 text-xs">
+                        <template x-for="(s, index) in getStudentsForGrading()" :key="s.id">
+                            <tr class="hover:bg-blue-50/40">
+                                <td class="p-4"><span class="font-black text-slate-700 block" x-text="s.nama"></span><span class="text-[9px] font-bold text-slate-400 uppercase" x-text="s.info || '-'"></span></td>
+                                <td class="p-4 text-center">
+                                    <template x-if="getSubmissionForStudent(s.id)"><button @click="openFileLink(getSubmissionForStudent(s.id).url, getSubmissionForStudent(s.id).name)" class="px-3 py-1.5 bg-blue-50 text-[#1e3a8a] rounded-lg text-[10px] font-bold hover:bg-[#1e3a8a] hover:text-white"><i class="ph-bold ph-download-simple mr-1"></i> Buka File</button></template>
+                                    <template x-if="!getSubmissionForStudent(s.id)"><span class="text-[10px] font-bold text-slate-400 italic">Belum Ada</span></template>
+                                </td>
+                                <td class="p-4 flex justify-center"><input type="number" x-model="studentGrades[s.id]" @paste="handlePasteNilai($event, index)" placeholder="0-100" class="w-20 px-3 py-2 text-center border border-slate-200 rounded-lg outline-none font-black focus:border-[#1e3a8a] bg-white"></td>
+                            </tr>
+                        </template>
+                        <tr x-show="getStudentsForGrading().length === 0"><td colspan="3" class="p-8 text-center text-slate-400 font-medium italic">Tidak ada siswa.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pt-4 border-t border-slate-100 flex justify-end space-x-3"><button @click="showNilaiModal = false" class="py-3 px-6 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button @click="saveNilai()" class="bg-[#1e3a8a] hover:bg-[#1e40af] text-white px-8 py-3 rounded-xl text-[11px] font-black uppercase">Simpan Semua Nilai</button></div>
+        </div>
+    </div>
+    
+    <div x-show="showDetailMateriModal" class="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md m-4 border border-slate-100 relative" @click.away="showDetailMateriModal = false">
+            <button @click="showDetailMateriModal = false" class="absolute top-5 right-5 text-slate-400 hover:text-red-500"><i class="ph-bold ph-x text-xl"></i></button>
+            <template x-if="selectedMateri">
+                <div>
+                    <div class="h-48 rounded-2xl overflow-hidden mb-6 shadow-inner relative"><img :src="selectedMateri.cover || 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=400&q=80'" class="w-full h-full object-cover"><div class="absolute inset-0 bg-gradient-to-t from-slate-900/60 to-transparent"></div><span class="absolute bottom-4 left-4 bg-[#10b981] text-white text-[10px] font-black px-3 py-1.5 rounded-full uppercase" x-text="selectedMateri.mapel"></span></div>
+                    <h3 class="text-xl font-black text-slate-800 mb-3" x-text="selectedMateri.judul"></h3><div class="max-h-40 overflow-y-auto custom-scrollbar pr-2 mb-6"><p class="text-sm text-slate-600" x-text="selectedMateri.deskripsi"></p></div>
+                    <div class="flex items-center justify-between border-t border-slate-100 pt-5"><div class="flex items-center"><div class="bg-slate-100 text-slate-500 rounded-full w-9 h-9 flex items-center justify-center font-black" x-text="(selectedMateri.guru||'U').charAt(0)"></div><div class="ml-3"><p class="text-[9px] text-slate-400 uppercase font-black">Pengajar</p><p class="text-xs font-bold text-slate-700" x-text="selectedMateri.guru"></p></div></div><button @click="openFileLink(selectedMateri.fileName, selectedMateri.judul)" class="bg-[#1e3a8a] text-white px-5 py-3 rounded-xl text-[11px] font-black uppercase"><i class="ph-bold ph-download-simple mr-2 text-base"></i> Buka File</button></div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Modal Informasi -->
+    <div x-show="showInformasiModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-2xl m-4 border border-slate-100 flex flex-col max-h-[90vh]">
+            <div class="flex justify-between items-center mb-6 shrink-0"><h3 class="text-sm font-black text-slate-800 uppercase" x-text="informasiForm.isEdit ? 'Ubah Pengumuman' : 'Buat Pengumuman Baru'"></h3></div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-4">
+                <form id="informasiFormId" @submit.prevent="saveRecord('Informasi', { ...informasiForm, kelasTarget: informasiForm.kelasTarget.join(', ') }, () => { showInformasiModal = false })" class="space-y-4">
+                    <div><label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Judul</label><input type="text" x-model="informasiForm.judul" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                    <div>
+                        <label class="block text-[9px] font-black text-slate-500 mb-2 ml-1 uppercase">Target Kelas</label>
+                        <div class="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                            <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                                <label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" value="Semua" x-model="informasiForm.kelasTarget" @change="if($el.checked) informasiForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700">Semua</span></label>
+                                <template x-for="cls in getDaftarKelas()" :key="cls"><label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" :value="cls" x-model="informasiForm.kelasTarget" @change="if($el.checked) informasiForm.kelasTarget = informasiForm.kelasTarget.filter(x => x !== 'Semua'); else if(informasiForm.kelasTarget.length === 0) informasiForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700" x-text="cls"></span></label></template>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Isi Informasi</label>
+                        <div class="border border-slate-200 rounded-t-xl bg-slate-50 p-2 flex flex-wrap gap-2 items-center border-b-0">
+                            <select @change="execCmd('fontName', $event.target.value)" class="text-[10px] font-bold border border-slate-200 rounded px-2 py-1 outline-none"><option value="Inter">Inter (Default)</option><option value="Arial">Arial</option><option value="Times New Roman">Times New</option></select>
+                            <div class="w-px h-4 bg-slate-300 mx-1"></div>
+                            <button type="button" @click="execCmd('bold')" class="p-1.5 text-slate-600 hover:bg-slate-200 rounded"><i class="ph-bold ph-text-b"></i></button><button type="button" @click="execCmd('italic')" class="p-1.5 text-slate-600 hover:bg-slate-200 rounded"><i class="ph-bold ph-text-italic"></i></button><button type="button" @click="execCmd('underline')" class="p-1.5 text-slate-600 hover:bg-slate-200 rounded"><i class="ph-bold ph-text-underline"></i></button>
+                            <div class="w-px h-4 bg-slate-300 mx-1"></div>
+                            <div class="flex items-center space-x-1 relative"><i class="ph-bold ph-palette text-slate-500 text-sm"></i><input type="color" @input="execCmd('foreColor', $event.target.value)" class="w-6 h-6 p-0 border-0 bg-transparent cursor-pointer rounded overflow-hidden"></div>
+                        </div>
+                        <div id="richTextEditor" contenteditable="true" @input="updateInformasiFormIsi()" class="w-full px-4 py-3 min-h-[150px] text-xs border border-slate-200 rounded-b-xl outline-none bg-white custom-scrollbar overflow-y-auto" style="font-family: 'Inter', sans-serif;"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="pt-4 flex space-x-3 border-t border-slate-100 shrink-0"><button type="button" @click="showInformasiModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" form="informasiFormId" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan Pengumuman</button></div>
+        </div>
+    </div>
+
+    <!-- Modal Change Password, Logout, Info -->
+    <div x-show="showChangePasswordModal" class="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm m-4 border border-slate-100">
+            <div class="flex items-center mb-6"><i class="ph-bold ph-lock-key text-2xl text-[#1e3a8a] mr-3"></i><h3 class="text-sm font-black text-slate-800 uppercase tracking-widest">Ganti Password</h3></div>
+            <form @submit.prevent="submitChangePassword()" class="space-y-4">
+                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Password Baru</label><input type="password" x-model="changePasswordForm.passwordBaru" required placeholder="Minimal 6 karakter" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Konfirmasi</label><input type="password" x-model="changePasswordForm.konfirmasiPassword" required placeholder="Ulangi password baru" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100 mt-2"><button type="button" @click="showChangePasswordModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showLogoutModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-xs text-center border border-slate-100">
+            <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-5 border-4 border-red-100"><i class="ph-bold ph-warning-circle text-3xl"></i></div>
+            <h3 class="text-sm font-black text-slate-800 mb-2 uppercase tracking-widest">Keluar Aplikasi?</h3><p class="text-[11px] text-slate-500 mb-8 font-medium">Sesi Anda akan diakhiri dan butuh login ulang nanti.</p>
+            <div class="flex space-x-3"><button @click="showLogoutModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-black uppercase">Batal</button><button @click="logout()" class="flex-1 py-3 bg-[#e11d48] text-white rounded-xl text-xs font-black uppercase">Keluar</button></div>
+        </div>
+    </div>
+
+    <div x-show="showInfoModal" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-7 w-full max-w-sm m-4 border border-slate-100">
+            <div class="flex justify-between items-center mb-5 border-b border-slate-50 pb-4"><div class="flex items-center"><i class="ph-fill ph-info text-[#1e3a8a] text-xl mr-2"></i><h3 class="text-xs font-black text-[#1e3a8a] uppercase tracking-widest" x-text="infoModalTitle"></h3></div><button @click="showInfoModal = false" class="text-slate-400 hover:text-red-500"><i class="ph-bold ph-x text-lg"></i></button></div>
+            <div class="max-h-64 overflow-y-auto custom-scrollbar space-y-3 mb-6">
+                <template x-for="(item, index) in infoModalList" :key="index"><div class="px-4 py-3 bg-slate-50 rounded-xl flex items-center text-xs font-bold text-slate-700"><div class="w-1.5 h-1.5 rounded-full bg-[#10b981] mr-3 shrink-0"></div><span x-text="item"></span></div></template>
+            </div>
+            <button @click="showInfoModal = false" class="w-full py-3 bg-[#0f172a] text-white rounded-xl text-xs font-black uppercase shadow-lg hover:bg-slate-800">Tutup</button>
+        </div>
+    </div>
+
+    <!-- Modal Upload Jawaban Tugas -->
+    <div x-show="showUploadTugasModal" class="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm m-4 border border-slate-100">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6">Upload Jawaban Tugas</h3>
+            <form @submit.prevent="processUploadTugas()" class="space-y-6">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">File Tugas (PDF/JPG/PNG/DOC/ZIP)</label>
+                    <div class="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center hover:bg-emerald-50/50 cursor-pointer relative border-emerald-100">
+                        <input type="file" accept=".pdf, .jpg, .jpeg, .png, .doc, .docx, .zip" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" @change="handleTugasFileUpload($event)">
+                        <i class="ph-fill ph-file-arrow-up text-5xl text-[#10b981] mb-3"></i><p class="text-xs font-black text-slate-700 truncate w-full px-2" x-text="uploadTugasForm.fileName || 'Pilih File Tugas'"></p>
+                    </div>
+                </div>
+                <div class="flex space-x-3">
+                    <button type="button" @click="showUploadTugasModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider">Batal</button>
+                    <button type="submit" :disabled="!uploadTugasForm.fileData || uploadTugasForm.isUploading" class="flex-1 bg-[#1e3a8a] text-white font-black py-3 rounded-xl text-[11px] uppercase tracking-wider disabled:opacity-50 flex justify-center">
+                        <span x-show="!uploadTugasForm.isUploading">Upload File</span>
+                        <div x-show="uploadTugasForm.isUploading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white" style="display:none"></div>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modals Impor Excel Admin -->
+    <div x-show="showUploadModal" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm m-4 border border-slate-100">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6">Impor Database Siswa</h3>
+            <form @submit.prevent="processUpload()" class="space-y-6">
+                <div><label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">Target Kelas</label><select x-model="uploadForm.kelas" class="w-full px-5 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"><template x-for="k in data.adminKelas || []" :key="k.id"><option :value="k.namaKelas" x-text="k.namaKelas"></option></template></select></div>
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">File Excel (.xlsx)</label>
+                    <div class="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer relative border-blue-100 hover:bg-blue-50">
+                        <input type="file" accept=".xlsx, .xls, .csv" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" @change="handleFileUpload($event)">
+                        <i class="ph-fill ph-file-xls text-5xl text-[#10b981] mb-3"></i><p class="text-xs font-black text-slate-700 truncate w-full" x-text="uploadForm.fileName || 'Pilih File Excel'"></p>
+                    </div>
+                </div>
+                <div class="flex space-x-3"><button type="button" @click="showUploadModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider">Batal</button><button type="submit" :disabled="!uploadForm.fileData || uploadForm.isUploading" class="flex-1 bg-[#10b981] text-white font-black py-3 rounded-xl text-[11px] uppercase tracking-wider disabled:opacity-50 flex justify-center"><span x-show="!uploadForm.isUploading">Mulai Impor</span><div x-show="uploadForm.isUploading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white" style="display:none"></div></button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showUploadUserModal" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm m-4 border border-slate-100">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6">Impor Data Pengguna</h3>
+            <form @submit.prevent="processUserUpload()" class="space-y-6">
+                <div>
+                    <label class="block text-[10px] font-black text-slate-500 mb-2 uppercase">File Excel (.xlsx)</label>
+                    <div class="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer relative border-blue-100 hover:bg-blue-50">
+                        <input type="file" accept=".xlsx, .xls, .csv" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" @change="handleUserFileUpload($event)">
+                        <i class="ph-fill ph-file-xls text-5xl text-[#1e3a8a] mb-3"></i><p class="text-xs font-black text-slate-700 truncate w-full" x-text="uploadUserForm.fileName || 'Pilih File Excel'"></p>
+                    </div>
+                </div>
+                <div class="flex space-x-3"><button type="button" @click="showUploadUserModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" :disabled="!uploadUserForm.fileData || uploadUserForm.isUploading" class="flex-1 bg-[#1e3a8a] text-white font-black py-3 rounded-xl text-[11px] uppercase tracking-wider disabled:opacity-50 flex justify-center"><span x-show="!uploadUserForm.isUploading">Mulai Impor</span><div x-show="uploadUserForm.isUploading" class="animate-spin rounded-full h-4 w-4 border-b-2 border-white" style="display:none"></div></button></div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modals Manajemen Data -->
+    <div x-show="showTugasModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg m-4 border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6" x-text="tugasForm.isEdit ? 'Ubah Penugasan' : 'Buat Penugasan Baru'"></h3>
+            <form @submit.prevent="saveRecord('Tugas', { ...tugasForm, kelasTarget: tugasForm.kelasTarget.join(', ') }, () => { showTugasModal = false })" class="space-y-4">
+                <div>
+                    <label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Mata Pelajaran</label>
+                    <select x-model="tugasForm.mapel" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50">
+                        <option value="" disabled selected>Pilih Mata Pelajaran...</option>
+                        <template x-for="m in getUniqueMapelForFilter()" :key="m"><option :value="m" x-text="m"></option></template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-500 mb-2 ml-1 uppercase">Target Kelas</label>
+                    <div class="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                            <label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" value="Semua" x-model="tugasForm.kelasTarget" @change="if($el.checked) tugasForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700">Semua</span></label>
+                            <template x-for="cls in getDaftarKelas()" :key="cls"><label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" :value="cls" x-model="tugasForm.kelasTarget" @change="if($el.checked) tugasForm.kelasTarget = tugasForm.kelasTarget.filter(x => x !== 'Semua'); else if(tugasForm.kelasTarget.length === 0) tugasForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700" x-text="cls"></span></label></template>
+                        </div>
+                    </div>
+                </div>
+                <div><label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Judul Tugas / Instruksi</label><input type="text" x-model="tugasForm.judul" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div><label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Batas Waktu</label><input type="date" x-model="tugasForm.deadline" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div>
+                    <div><label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Nilai KKM</label><input type="number" x-model="tugasForm.kkm" min="1" max="100" required placeholder="75" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div>
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-1.5 ml-1 uppercase">Tautan / Upload Soal</label>
+                    <div class="flex items-center space-x-2 mb-2">
+                        <div class="relative flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center overflow-hidden hover:border-[#1e3a8a]"><i class="ph-bold ph-paperclip text-slate-400 mr-2"></i><span class="text-[10px] text-slate-600 truncate font-medium" x-text="generalUploadForm.fileName || 'Pilih file soal...'"></span><input type="file" accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,image/*" @change="handleGenFileUpload($event, 'tugas')" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"></div>
+                        <button type="button" @click="processGenUpload('tugas')" :disabled="!generalUploadForm.fileData || generalUploadForm.isUploading" class="shrink-0 bg-[#10b981] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 flex items-center"><span x-show="!generalUploadForm.isUploading">Upload</span><div x-show="generalUploadForm.isUploading" class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div></button>
+                    </div>
+                    <input type="text" x-model="tugasForm.link" required placeholder="Atau paste link G-Form/Drive..." class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50">
+                </div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100"><button type="button" @click="showTugasModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showKelasModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-sm m-4 border border-slate-100">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6" x-text="kelasForm.isEdit ? 'Ubah Info Kelas' : 'Tambah Kelas Baru'"></h3>
+            <form @submit.prevent="saveRecord('Kelas', kelasForm, () => { showKelasModal = false })" class="space-y-4">
+                <div>
+                    <label class="block text-[9px] font-black text-slate-500 mb-1 ml-1 uppercase">Kode / Nama Kelas</label>
+                    <select x-model="kelasForm.namaKelas" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold">
+                        <option value="" disabled selected>Pilih Kelas...</option>
+                        <template x-for="k in getDaftarKelas()" :key="k"><option :value="k" x-text="k"></option></template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Wali Kelas</label>
+                    <select x-model="kelasForm.waliKelas" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50">
+                        <option value="" disabled selected>Pilih Wali Kelas...</option>
+                        <template x-for="w in getWaliKelasList()" :key="w"><option :value="w" x-text="w"></option></template>
+                    </select>
+                </div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100"><button type="button" @click="showKelasModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showJadwalModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg m-4 border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6" x-text="jadwalForm.isEdit ? 'Edit Jadwal' : 'Tambah Jadwal'"></h3>
+            <form @submit.prevent="saveRecord('Jadwal', { ...jadwalForm, kelasTarget: jadwalForm.kelasTarget.join(', ') }, () => { showJadwalModal = false })" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4"><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Hari</label><select x-model="jadwalForm.hari" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"><option value="Senin">Senin</option><option value="Selasa">Selasa</option><option value="Rabu">Rabu</option><option value="Kamis">Kamis</option><option value="Jumat">Jumat</option></select></div><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Pukul</label><input type="text" x-model="jadwalForm.jam" placeholder="07:00-08:30" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div></div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-2 ml-1 uppercase">Target Kelas</label>
+                    <div class="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                            <label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" value="Semua" x-model="jadwalForm.kelasTarget" @change="if($el.checked) jadwalForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700">Semua</span></label>
+                            <template x-for="cls in getDaftarKelas()" :key="cls"><label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" :value="cls" x-model="jadwalForm.kelasTarget" @change="if($el.checked) jadwalForm.kelasTarget = jadwalForm.kelasTarget.filter(x => x !== 'Semua'); else if(jadwalForm.kelasTarget.length === 0) jadwalForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700" x-text="cls"></span></label></template>
+                        </div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Mata Pelajaran</label>
+                        <select x-model="jadwalForm.mapel" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50">
+                            <option value="" disabled selected>Pilih Mata Pelajaran...</option>
+                            <template x-for="m in getUniqueMapelForFilter()" :key="m"><option :value="m" x-text="m"></option></template>
+                        </select>
+                    </div>
+                    <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Ruang</label><input type="text" x-model="jadwalForm.ruang" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div>
+                </div>
+                <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Guru</label><input type="text" x-model="jadwalForm.guru" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50"></div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100"><button type="button" @click="showJadwalModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase tracking-wider">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase tracking-wider">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showUserModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-md m-4 border border-slate-100">
+            <h3 class="text-sm font-black text-slate-800 uppercase tracking-widest mb-6" x-text="userForm.isEdit ? 'Ubah Pengguna' : 'Daftar Pengguna'"></h3>
+            <form @submit.prevent="saveRecord('Pengguna', userForm, () => { showUserModal = false })" class="space-y-4">
+                <div class="grid grid-cols-2 gap-4"><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">ID / NIS / Username</label><input type="text" x-model="userForm.username" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Password</label><input type="text" x-model="userForm.password" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div></div>
+                <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Nama Lengkap</label><input type="text" x-model="userForm.nama" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                <div class="grid grid-cols-2 gap-4"><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Role Akses</label><select x-model="userForm.role" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"><option value="Siswa">Siswa</option><option value="Guru">Guru</option><option value="Admin">Admin</option></select></div><div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Status</label><select x-model="userForm.status" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"><option value="Aktif">Aktif</option><option value="Nonaktif">Nonaktif</option></select></div></div>
+                <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Keterangan / Kelas</label><input type="text" x-model="userForm.info" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100"><button type="button" @click="showUserModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showMateriModal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg m-4 border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <h3 class="text-[13px] font-black text-slate-800 uppercase tracking-wider mb-6" x-text="materiForm.isEdit ? 'Edit Info Materi' : 'Buat & Upload Materi'"></h3>
+            <form @submit.prevent="saveRecord('Materi', { ...materiForm, kelasTarget: materiForm.kelasTarget.join(', ') }, () => { showMateriModal = false })" class="space-y-4">
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Topik / Mapel</label>
+                    <select x-model="materiForm.mapel" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-slate-50">
+                        <option value="" disabled selected>Pilih Mata Pelajaran...</option>
+                        <template x-for="m in getUniqueMapelForFilter()" :key="m"><option :value="m" x-text="m"></option></template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-2 ml-1 uppercase">Target Kelas</label>
+                    <div class="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+                            <label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" value="Semua" x-model="materiForm.kelasTarget" @change="if($el.checked) materiForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700">Semua</span></label>
+                            <template x-for="cls in getDaftarKelas()" :key="cls"><label class="flex items-center space-x-2 cursor-pointer bg-white border border-slate-200 px-3 py-2 rounded-xl hover:bg-slate-50"><input type="checkbox" :value="cls" x-model="materiForm.kelasTarget" @change="if($el.checked) materiForm.kelasTarget = materiForm.kelasTarget.filter(x => x !== 'Semua'); else if(materiForm.kelasTarget.length === 0) materiForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700" x-text="cls"></span></label></template>
+                        </div>
+                    </div>
+                </div>
+                <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Judul Materi</label><input type="text" x-model="materiForm.judul" required class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold"></div>
+                <div><label class="block text-[9px] font-black text-slate-400 mb-1 ml-1 uppercase">Deskripsi</label><textarea x-model="materiForm.deskripsi" rows="2" class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 custom-scrollbar resize-none font-bold"></textarea></div>
+                <div>
+                    <label class="block text-[9px] font-black text-slate-400 mb-1.5 ml-1 uppercase">Upload Materi</label>
+                    <div class="flex items-center space-x-2 mb-2">
+                        <div class="relative flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center overflow-hidden hover:border-[#1e3a8a]"><i class="ph-bold ph-paperclip text-slate-400 mr-2"></i><span class="text-[10px] text-slate-600 truncate font-medium" x-text="generalUploadForm.fileName || 'Pilih dokumen (PDF, Word, PPT)...'"></span><input type="file" accept=".doc,.docx,.xls,.xlsx,.ppt,.pptx,.pdf,image/*" @change="handleGenFileUpload($event, 'materi')" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"></div>
+                        <button type="button" @click="processGenUpload('materi')" :disabled="!generalUploadForm.fileData || generalUploadForm.isUploading" class="shrink-0 bg-[#10b981] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 flex items-center"><span x-show="!generalUploadForm.isUploading">Upload</span><div x-show="generalUploadForm.isUploading" class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div></button>
+                    </div>
+                    <input type="text" x-model="materiForm.fileName" required placeholder="Atau paste link YouTube / G-Drive..." class="w-full px-4 py-3 text-xs border border-slate-200 rounded-xl outline-none bg-slate-50 font-bold">
+                </div>
+                <div class="pt-5 flex space-x-3 border-t border-slate-100"><button type="button" @click="showMateriModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Batal</button><button type="submit" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan</button></div>
+            </form>
+        </div>
+    </div>
+
+    <div x-show="showBerkasModal" class="fixed inset-0 z-[115] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm" style="display: none;">
+        <div class="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-lg m-4 border border-slate-100 flex flex-col max-h-[90vh]">
+            <div class="mb-4 shrink-0 border-b border-slate-100 pb-4"><h3 class="text-sm font-black text-slate-800 uppercase">Upload Perangkat Pembelajaran</h3><template x-if="!berkasForm.isManual"><p class="text-[11px] font-bold text-[#1e3a8a] mt-1" x-text="berkasForm.mapel + ' - Kelas ' + (Array.isArray(berkasForm.kelasTarget) ? berkasForm.kelasTarget.join(', ') : berkasForm.kelasTarget)"></p></template></div>
+            <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 mb-2">
+                <form id="berkasFormId" @submit.prevent="saveBerkas()" class="space-y-4">
+                    <template x-if="berkasForm.isManual">
+                        <div class="grid grid-cols-2 gap-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 mb-2">
+                            <div>
+                                <label class="block text-[9px] font-black text-[#1e3a8a] mb-1.5 uppercase">Mata Pelajaran</label>
+                                <select x-model="berkasForm.mapel" required class="w-full px-3 py-2 text-xs border border-blue-200 rounded-lg outline-none font-bold bg-white">
+                                    <option value="" disabled selected>Pilih Mapel...</option>
+                                    <template x-for="m in getUniqueMapelForFilter()" :key="m"><option :value="m" x-text="m"></option></template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[9px] font-black text-[#1e3a8a] mb-1.5 uppercase">Kelas Target</label>
+                                <div class="max-h-32 overflow-y-auto custom-scrollbar p-1">
+                                    <div class="grid grid-cols-3 sm:grid-cols-2 gap-2">
+                                        <label class="flex items-center space-x-2 cursor-pointer bg-white border border-blue-200 px-3 py-2 rounded-xl"><input type="checkbox" value="Semua" x-model="berkasForm.kelasTarget" @change="if($el.checked) berkasForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700">Semua</span></label>
+                                        <template x-for="cls in getDaftarKelas()" :key="cls"><label class="flex items-center space-x-2 cursor-pointer bg-white border border-blue-200 px-3 py-2 rounded-xl"><input type="checkbox" :value="cls" x-model="berkasForm.kelasTarget" @change="if($el.checked) berkasForm.kelasTarget = berkasForm.kelasTarget.filter(x => x !== 'Semua'); else if(berkasForm.kelasTarget.length === 0) berkasForm.kelasTarget = ['Semua']" class="w-4 h-4 rounded text-[#1e3a8a] border-slate-300"><span class="text-xs font-bold text-slate-700" x-text="cls"></span></label></template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <label class="block text-[10px] font-black text-slate-700 mb-2 uppercase flex justify-between"><span>1. Modul Ajar</span><button type="button" x-show="berkasForm.modulAjar" @click="openFileLink(berkasForm.modulAjar, 'Modul_Ajar')" class="text-blue-500 hover:underline">Lihat File</button></label>
+                        <div class="flex items-center space-x-2 mb-2"><div class="relative flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 flex items-center overflow-hidden hover:border-[#1e3a8a]"><i class="ph-bold ph-file-pdf text-slate-400 mr-2"></i><span class="text-[10px] text-slate-600 truncate font-medium" x-text="berkasUpload.modulAjar.fileName || 'Pilih file PDF/Word...'"></span><input type="file" accept=".pdf,.doc,.docx" @change="handleGenFileUpload($event, 'modulAjar')" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"></div><button type="button" @click="processGenUpload('modulAjar')" :disabled="!berkasUpload.modulAjar.fileData || berkasUpload.modulAjar.isUploading" class="shrink-0 bg-[#10b981] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 flex items-center"><span x-show="!berkasUpload.modulAjar.isUploading">Upload</span><div x-show="berkasUpload.modulAjar.isUploading" class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div></button></div>
+                        <input type="text" x-model="berkasForm.modulAjar" placeholder="Atau paste link G-Drive..." class="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-white text-slate-500">
+                    </div>
+                    <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <label class="block text-[10px] font-black text-slate-700 mb-2 uppercase flex justify-between"><span>2. Program Semester (Prosem)</span><button type="button" x-show="berkasForm.prosem" @click="openFileLink(berkasForm.prosem, 'Prosem')" class="text-blue-500 hover:underline">Lihat File</button></label>
+                        <div class="flex items-center space-x-2 mb-2"><div class="relative flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 flex items-center overflow-hidden hover:border-[#1e3a8a]"><i class="ph-bold ph-file-xls text-slate-400 mr-2"></i><span class="text-[10px] text-slate-600 truncate font-medium" x-text="berkasUpload.prosem.fileName || 'Pilih file Excel/PDF...'"></span><input type="file" accept=".pdf,.xls,.xlsx" @change="handleGenFileUpload($event, 'prosem')" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"></div><button type="button" @click="processGenUpload('prosem')" :disabled="!berkasUpload.prosem.fileData || berkasUpload.prosem.isUploading" class="shrink-0 bg-[#10b981] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 flex items-center"><span x-show="!berkasUpload.prosem.isUploading">Upload</span><div x-show="berkasUpload.prosem.isUploading" class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div></button></div>
+                        <input type="text" x-model="berkasForm.prosem" placeholder="Atau paste link G-Drive..." class="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-white text-slate-500">
+                    </div>
+                    <div class="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                        <label class="block text-[10px] font-black text-slate-700 mb-2 uppercase flex justify-between"><span>3. Program Tahunan (Prota)</span><button type="button" x-show="berkasForm.prota" @click="openFileLink(berkasForm.prota, 'Prota')" class="text-blue-500 hover:underline">Lihat File</button></label>
+                        <div class="flex items-center space-x-2 mb-2"><div class="relative flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 flex items-center overflow-hidden hover:border-[#1e3a8a]"><i class="ph-bold ph-file-xls text-slate-400 mr-2"></i><span class="text-[10px] text-slate-600 truncate font-medium" x-text="berkasUpload.prota.fileName || 'Pilih file Excel/PDF...'"></span><input type="file" accept=".pdf,.xls,.xlsx" @change="handleGenFileUpload($event, 'prota')" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"></div><button type="button" @click="processGenUpload('prota')" :disabled="!berkasUpload.prota.fileData || berkasUpload.prota.isUploading" class="shrink-0 bg-[#10b981] text-white px-3 py-2 rounded-xl text-[10px] font-black uppercase disabled:opacity-50 flex items-center"><span x-show="!berkasUpload.prota.isUploading">Upload</span><div x-show="berkasUpload.prota.isUploading" class="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div></button></div>
+                        <input type="text" x-model="berkasForm.prota" placeholder="Atau paste link G-Drive..." class="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl outline-none font-bold bg-white text-slate-500">
+                    </div>
+                </form>
+            </div>
+            <div class="pt-4 flex space-x-3 border-t border-slate-100 shrink-0"><button type="button" @click="showBerkasModal = false" class="flex-1 py-3 bg-slate-50 text-slate-600 rounded-xl text-[11px] font-black uppercase">Tutup</button><button type="submit" form="berkasFormId" class="flex-1 py-3 bg-[#1e3a8a] text-white rounded-xl text-[11px] font-black uppercase">Simpan Kelengkapan</button></div>
+        </div>
+    </div>
+</body>
+</html>
